@@ -1,135 +1,293 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gyema — Terms of Service</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      max-width: 760px;
-      margin: 0 auto;
-      padding: 24px 20px 80px;
-      color: #1a1a1a;
-      line-height: 1.6;
-      background: #fff;
-    }
-    h1 { font-size: 1.8em; margin-top: 0; }
-    h2 { font-size: 1.25em; margin-top: 2em; border-bottom: 1px solid #e5e5e5; padding-bottom: 0.3em; }
-    h3 { font-size: 1.05em; margin-top: 1.5em; }
-    p, li { font-size: 1em; }
-    ul { padding-left: 1.4em; }
-    a { color: #7B2CBF; }
-    .meta { color: #666; font-size: 0.9em; margin-bottom: 2em; }
-    hr { border: none; border-top: 1px solid #e5e5e5; margin: 2em 0; }
-    code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
-    .callout { background: #fff8e1; border-left: 4px solid #f4b400; padding: 12px 16px; margin: 1.5em 0; border-radius: 4px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gyema — Terms of Service</title>
+<style>
+  :root {
+    --navy: #16213e;
+    --navy-deep: #0f1629;
+    --green: #1b6b3a;
+    --green-bright: #21944e;
+    --gold: #f0a500;
+    --gold-soft: #f7c948;
+    --ink: #1a1a2e;
+    --muted: #5b6172;
+    --line: #e7e9f0;
+    --bg: #fbfbfd;
+    --card: #ffffff;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    font-family: "Segoe UI", Roboto, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    line-height: 1.65;
+    background: var(--bg);
+    font-size: 16px;
+  }
+
+  /* ---- Header banner ---- */
+  .masthead {
+    background: linear-gradient(135deg, var(--navy-deep) 0%, var(--navy) 45%, var(--green) 100%);
+    color: #fff;
+    padding: 38px 22px 30px;
+    position: relative;
+    overflow: hidden;
+  }
+  .masthead::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 5px;
+    background: linear-gradient(90deg,
+      #ce1126 0%, #ce1126 33%,
+      var(--gold) 33%, var(--gold) 66%,
+      var(--green-bright) 66%, var(--green-bright) 100%);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  .logo {
+    width: 52px; height: 52px;
+    border-radius: 14px;
+    background: linear-gradient(145deg, #2a2150, #1a1330);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  }
+  .logo span {
+    font-size: 30px;
+    font-weight: 800;
+    color: var(--gold);
+    line-height: 1;
+  }
+  .brand-text h1 {
+    font-size: 1.5em;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .brand-text .tag {
+    font-size: 0.82em;
+    color: rgba(255,255,255,0.7);
+    font-weight: 400;
+    margin-top: 2px;
+  }
+  .doc-title {
+    max-width: 760px;
+    margin: 26px auto 0;
+    font-size: 1.1em;
+    font-weight: 600;
+    color: var(--gold-soft);
+  }
+  .updated {
+    max-width: 760px;
+    margin: 4px auto 0;
+    font-size: 0.85em;
+    color: rgba(255,255,255,0.65);
+  }
+
+  /* ---- Body ---- */
+  main {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 34px 22px 90px;
+  }
+  .lede {
+    font-size: 1.05em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .lede + .lede { margin-bottom: 0; }
+
+  h2 {
+    font-size: 1.15em;
+    font-weight: 700;
+    color: var(--navy);
+    margin: 2.4em 0 0.5em;
+    padding-bottom: 0.35em;
+    border-bottom: 2px solid var(--line);
+  }
+  h2 .num {
+    color: var(--gold);
+    margin-right: 0.4em;
+    font-weight: 800;
+  }
+  h3 {
+    font-size: 1.02em;
+    font-weight: 600;
+    color: var(--green);
+    margin: 1.5em 0 0.4em;
+  }
+  p { margin: 0.7em 0; }
+  ul { margin: 0.6em 0 0.6em 0; padding-left: 1.3em; }
+  li { margin: 0.35em 0; }
+  a { color: var(--green-bright); font-weight: 600; text-decoration: none; border-bottom: 1px solid rgba(33,148,78,0.3); }
+  a:hover { border-bottom-color: var(--green-bright); }
+  strong { color: var(--ink); font-weight: 700; }
+  code {
+    background: #f1f2f6;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 0.88em;
+    font-family: "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
+    color: #3a3f55;
+  }
+  hr { border: none; border-top: 1px solid var(--line); margin: 1.6em 0; }
+
+  .callout {
+    background: linear-gradient(180deg, #fffaf0, #fff8e8);
+    border-left: 4px solid var(--gold);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 1.2em 0;
+  }
+  .callout p { margin: 0; }
+
+  .closing {
+    margin-top: 2em;
+    padding-top: 1.4em;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 0.92em;
+  }
+
+  footer {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 22px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 0.85em;
+    text-align: center;
+  }
+</style>
 </head>
 <body>
 
-<h1>Gyema Terms of Service</h1>
-<p class="meta"><strong>Last updated:</strong> 6 May 2026</p>
+<header class="masthead">
+  <div class="brand">
+    <div class="logo"><span>&#960;</span></div>
+    <div class="brand-text">
+      <h1>Gyema</h1>
+      <div class="tag">P2P Delivery on Pi &middot; Built in Ghana</div>
+    </div>
+  </div>
+  <div class="doc-title">Terms of Service</div>
+  <div class="updated">Last updated: 28 May 2026</div>
+</header>
 
-<p>These Terms of Service ("<strong>Terms</strong>") govern your use of <strong>Gyema</strong>, a peer-to-peer delivery coordination service operated by <strong>Pi Logistics LTD</strong> ("we", "us", or "Gyema"). By using Gyema, you agree to these Terms. If you do not agree, do not use Gyema.</p>
+<main>
+  <p class="lede">These Terms of Service ("<strong>Terms</strong>") govern your use of <strong>Gyema</strong>, a peer-to-peer delivery coordination service operated by <strong>Pi Logistics LTD</strong> ("we", "us", or "Gyema"). By using Gyema, you agree to these Terms. If you do not agree, do not use Gyema.</p>
+  <p class="lede">These Terms describe Gyema as it works today (Version 1). When we add new features, we will update these Terms and notify users.</p>
 
-<p>These Terms describe Gyema as it works today (Version 1). When we add new features, we will update these Terms and notify users.</p>
+  <h2><span class="num">1</span>What Gyema is and is not</h2>
+  <p>Gyema is a <strong>coordination platform</strong>. It helps Pi Network Pioneers travelling between cities ("<strong>Travellers</strong>") connect with Pi Network Pioneers who need a package delivered ("<strong>Senders</strong>").</p>
+  <p>Gyema:</p>
+  <ul>
+    <li>Lets users post trips and delivery requests</li>
+    <li>Generates a tracking identifier (e.g. <code>GYM-XXXXXX</code>)</li>
+    <li>Allows the two parties to contact each other off-platform (via WhatsApp or Pi Browser)</li>
+  </ul>
+  <p>Gyema is <strong>not</strong> a courier company, freight forwarder, logistics operator, payment processor, escrow agent, employer of Travellers, or insurer. Any agreement to carry, deliver, accept, or pay for a package is a private arrangement <strong>between the Sender and the Traveller directly</strong>. Gyema is not a party to that arrangement.</p>
 
-<hr>
+  <h2><span class="num">2</span>Eligibility</h2>
+  <p>To use Gyema you must:</p>
+  <ul>
+    <li>Be at least <strong>18 years old</strong>;</li>
+    <li>Be a registered Pi Network Pioneer in good standing;</li>
+    <li>Be legally able to enter into binding agreements in your country.</li>
+  </ul>
+  <p>If you do not meet all of these requirements, you may not use Gyema.</p>
 
-<h2>1. What Gyema is and is not</h2>
-<p>Gyema is a <strong>coordination platform</strong>. It helps Pi Network Pioneers travelling between cities ("<strong>Travellers</strong>") connect with Pi Network Pioneers who need a package delivered ("<strong>Senders</strong>").</p>
-<p>Gyema:</p>
-<ul>
-  <li>Lets users post trips and delivery requests</li>
-  <li>Generates a tracking identifier (e.g. <code>GYM-XXXXXX</code>)</li>
-  <li>Allows the two parties to contact each other off-platform (via WhatsApp or Pi Browser)</li>
-</ul>
-<p>Gyema is <strong>not</strong> a courier company, freight forwarder, logistics operator, payment processor, escrow agent, employer of Travellers, or insurer. Any agreement to carry, deliver, accept, or pay for a package is a private arrangement <strong>between the Sender and the Traveller directly</strong>. Gyema is not a party to that arrangement.</p>
+  <h2><span class="num">3</span>Your account and identity</h2>
+  <p>You sign in to Gyema using your Pi Network identity. You are responsible for the security of your Pi account. Anyone who can access your Pi account can access your Gyema activity. You agree that information you publish through Gyema (your Pi username and the WhatsApp number you provide on a listing) will be visible to other Gyema users.</p>
 
-<h2>2. Eligibility</h2>
-<p>To use Gyema you must:</p>
-<ul>
-  <li>Be at least <strong>18 years old</strong>;</li>
-  <li>Be a registered Pi Network Pioneer in good standing;</li>
-  <li>Be legally able to enter into binding agreements in your country.</li>
-</ul>
-<p>If you do not meet all of these requirements, you may not use Gyema.</p>
+  <h2><span class="num">4</span>Prohibited items</h2>
+  <p>You agree <strong>not</strong> to use Gyema to send, request the delivery of, or carry any of the following:</p>
+  <ul>
+    <li>Goods that are illegal under the laws of either the origin or destination country;</li>
+    <li>Weapons, ammunition, explosives, or replica firearms;</li>
+    <li>Drugs, controlled substances, or unauthorised pharmaceuticals;</li>
+    <li>Hazardous, flammable, corrosive, or radioactive materials;</li>
+    <li>Perishable food, fresh produce, or any item requiring temperature control;</li>
+    <li>Cash, currency, monetary instruments, or precious metals;</li>
+    <li>Live animals or human remains;</li>
+    <li>Counterfeit goods or items that infringe another person's intellectual property;</li>
+    <li>Stolen property, or property you do not have the legal right to send;</li>
+    <li>Anything else that would breach the law of any jurisdiction the package will pass through.</li>
+  </ul>
+  <p>Travellers are entitled — and encouraged — to inspect any package before agreeing to carry it, and to refuse delivery for any reason. Any user who posts or attempts to send a prohibited item may have their listings removed and their access to Gyema terminated without notice.</p>
 
-<h2>3. Your account and identity</h2>
-<p>You sign in to Gyema using your Pi Network identity. You are responsible for the security of your Pi account. Anyone who can access your Pi account can access your Gyema activity. You agree that information you publish through Gyema (your Pi username and the WhatsApp number you provide on a listing) will be visible to other Gyema users.</p>
+  <h2><span class="num">5</span>How payment works in V1</h2>
+  <p>In Version 1, <strong>Gyema does not handle payments</strong>. The price or offer shown on a listing is between the Sender and the Traveller. They agree directly how and when payment is made (whether in Pi, mobile money, cash, or any other method they choose) and are solely responsible for honouring that agreement.</p>
+  <p>An on-platform escrow system using Pi Network is planned for a future version. When it is introduced, these Terms will be updated.</p>
 
-<h2>4. Prohibited items</h2>
-<p>You agree <strong>not</strong> to use Gyema to send, request the delivery of, or carry any of the following:</p>
-<ul>
-  <li>Goods that are illegal under the laws of either the origin or destination country;</li>
-  <li>Weapons, ammunition, explosives, or replica firearms;</li>
-  <li>Drugs, controlled substances, or unauthorised pharmaceuticals;</li>
-  <li>Hazardous, flammable, corrosive, or radioactive materials;</li>
-  <li>Perishable food, fresh produce, or any item requiring temperature control;</li>
-  <li>Cash, currency, monetary instruments, or precious metals;</li>
-  <li>Live animals or human remains;</li>
-  <li>Counterfeit goods or items that infringe another person's intellectual property;</li>
-  <li>Stolen property, or property you do not have the legal right to send;</li>
-  <li>Anything else that would breach the law of any jurisdiction the package will pass through.</li>
-</ul>
-<p>Travellers are entitled — and encouraged — to inspect any package before agreeing to carry it, and to refuse delivery for any reason. Any user who posts or attempts to send a prohibited item may have their listings removed and their access to Gyema terminated without notice.</p>
+  <h2><span class="num">6</span>Risks you accept by using Gyema</h2>
+  <p>Using a peer-to-peer delivery service involves real risks. By using Gyema you acknowledge and accept that:</p>
+  <ul>
+    <li>Travellers and Senders are <strong>independent third parties</strong> not employed, vetted, or supervised by Gyema beyond the Pi Network identity check that Pi performs.</li>
+    <li>Gyema does <strong>not</strong> verify the contents of any package, the truth of any listing, or the reliability of any user.</li>
+    <li>Packages may be lost, damaged, delayed, or fail to be delivered. Gyema is not responsible for any of those outcomes.</li>
+    <li>Off-platform communications (WhatsApp, Pi Browser, etc.) are not monitored by Gyema and Gyema cannot mediate them.</li>
+    <li>You are responsible for understanding and complying with all customs, import, export, tax, and other laws that apply to anything you send or carry.</li>
+  </ul>
 
-<h2>5. How payment works in V1</h2>
-<p>In Version 1, <strong>Gyema does not handle payments</strong>. The price or offer shown on a listing is between the Sender and the Traveller. They agree directly how and when payment is made (whether in Pi, mobile money, cash, or any other method they choose) and are solely responsible for honouring that agreement.</p>
-<p>An on-platform escrow system using Pi Network is planned for a future version. When it is introduced, these Terms will be updated.</p>
+  <h2><span class="num">7</span>Acceptable use</h2>
+  <p>You agree to use Gyema lawfully and in good faith. In particular, you agree not to:</p>
+  <ul>
+    <li>Post false, misleading, or fraudulent listings;</li>
+    <li>Use Gyema to harass, threaten, defraud, or harm any other person;</li>
+    <li>Attempt to circumvent Gyema's restrictions, scrape data, or attack its infrastructure;</li>
+    <li>Impersonate another user or misrepresent your relationship with any person or entity;</li>
+    <li>Use Gyema in any way that breaches these Terms or any applicable law.</li>
+  </ul>
 
-<h2>6. Risks you accept by using Gyema</h2>
-<p>Using a peer-to-peer delivery service involves real risks. By using Gyema you acknowledge and accept that:</p>
-<ul>
-  <li>Travellers and Senders are <strong>independent third parties</strong> not employed, vetted, or supervised by Gyema beyond the Pi Network identity check that Pi performs.</li>
-  <li>Gyema does <strong>not</strong> verify the contents of any package, the truth of any listing, or the reliability of any user.</li>
-  <li>Packages may be lost, damaged, delayed, or fail to be delivered. Gyema is not responsible for any of those outcomes.</li>
-  <li>Off-platform communications (WhatsApp, Pi Browser, etc.) are not monitored by Gyema and Gyema cannot mediate them.</li>
-  <li>You are responsible for understanding and complying with all customs, import, export, tax, and other laws that apply to anything you send or carry.</li>
-</ul>
+  <h2><span class="num">8</span>Disclaimer of warranties</h2>
+  <p>Gyema is provided <strong>"as is" and "as available"</strong>. To the fullest extent permitted by law, Gyema and Pi Logistics LTD make no warranties of any kind, express or implied, including (without limitation) warranties of merchantability, fitness for a particular purpose, accuracy, reliability, uptime, or non-infringement.</p>
+  <p>We do not warrant that Gyema will be uninterrupted, error-free, secure, or that any defect will be corrected.</p>
 
-<h2>7. Acceptable use</h2>
-<p>You agree to use Gyema lawfully and in good faith. In particular, you agree not to:</p>
-<ul>
-  <li>Post false, misleading, or fraudulent listings;</li>
-  <li>Use Gyema to harass, threaten, defraud, or harm any other person;</li>
-  <li>Attempt to circumvent Gyema's restrictions, scrape data, or attack its infrastructure;</li>
-  <li>Impersonate another user or misrepresent your relationship with any person or entity;</li>
-  <li>Use Gyema in any way that breaches these Terms or any applicable law.</li>
-</ul>
+  <h2><span class="num">9</span>Limitation of liability</h2>
+  <p>To the fullest extent permitted by Ghanaian law, neither Pi Logistics LTD nor any of its directors, employees, agents, or affiliates shall be liable to any user for any indirect, incidental, consequential, special, or exemplary damages arising out of or in connection with the use of Gyema, including (without limitation) loss of, damage to, or non-delivery of any package, loss of payment between users, loss of data, loss of goodwill, or any dispute between users.</p>
+  <p>Where liability cannot be excluded by law, our total aggregate liability to you for any claim arising out of or relating to Gyema is limited to <strong>the equivalent of GHS 100 (one hundred Ghana cedis)</strong>.</p>
 
-<h2>8. Disclaimer of warranties</h2>
-<p>Gyema is provided <strong>"as is" and "as available"</strong>. To the fullest extent permitted by law, Gyema and Pi Logistics LTD make no warranties of any kind, express or implied, including (without limitation) warranties of merchantability, fitness for a particular purpose, accuracy, reliability, uptime, or non-infringement.</p>
-<p>We do not warrant that Gyema will be uninterrupted, error-free, secure, or that any defect will be corrected.</p>
+  <h2><span class="num">10</span>Indemnity</h2>
+  <p>You agree to indemnify and hold harmless Pi Logistics LTD, its directors, employees, agents, and affiliates from and against any claim, loss, liability, or expense (including reasonable legal fees) arising from your use of Gyema, your breach of these Terms, your violation of any law, or any agreement or dispute between you and another Gyema user.</p>
 
-<h2>9. Limitation of liability</h2>
-<p>To the fullest extent permitted by Ghanaian law, neither Pi Logistics LTD nor any of its directors, employees, agents, or affiliates shall be liable to any user for any indirect, incidental, consequential, special, or exemplary damages arising out of or in connection with the use of Gyema, including (without limitation) loss of, damage to, or non-delivery of any package, loss of payment between users, loss of data, loss of goodwill, or any dispute between users.</p>
-<p>Where liability cannot be excluded by law, our total aggregate liability to you for any claim arising out of or relating to Gyema is limited to <strong>the equivalent of GHS 100 (one hundred Ghana cedis)</strong>.</p>
+  <h2><span class="num">11</span>Termination</h2>
+  <p>You may stop using Gyema at any time. We may suspend or terminate your access to Gyema, with or without notice, if we reasonably believe you have breached these Terms, attempted to send or carry a prohibited item, or engaged in fraudulent or harmful behaviour.</p>
+  <p>Upon termination, listings you have posted may remain visible until they expire or are removed. You can request deletion as described in our <a href="/privacy.html">Privacy Policy</a>.</p>
 
-<h2>10. Indemnity</h2>
-<p>You agree to indemnify and hold harmless Pi Logistics LTD, its directors, employees, agents, and affiliates from and against any claim, loss, liability, or expense (including reasonable legal fees) arising from your use of Gyema, your breach of these Terms, your violation of any law, or any agreement or dispute between you and another Gyema user.</p>
+  <h2><span class="num">12</span>Privacy</h2>
+  <p>Our <a href="/privacy.html">Privacy Policy</a> explains what data we collect and how it is used. By using Gyema, you also accept the Privacy Policy.</p>
 
-<h2>11. Termination</h2>
-<p>You may stop using Gyema at any time. We may suspend or terminate your access to Gyema, with or without notice, if we reasonably believe you have breached these Terms, attempted to send or carry a prohibited item, or engaged in fraudulent or harmful behaviour.</p>
-<p>Upon termination, listings you have posted may remain visible until they expire or are removed. You can request deletion as described in our <a href="/privacy.html">Privacy Policy</a>.</p>
+  <h2><span class="num">13</span>Changes to these Terms</h2>
+  <p>We may update these Terms as Gyema evolves. The "Last updated" date at the top of this page will always reflect the most recent version. Material changes will be communicated via the app. Continuing to use Gyema after a change means you accept the updated Terms.</p>
 
-<h2>12. Privacy</h2>
-<p>Our <a href="/privacy.html">Privacy Policy</a> explains what data we collect and how it is used. By using Gyema, you also accept the Privacy Policy.</p>
+  <h2><span class="num">14</span>Governing law and disputes</h2>
+  <p>These Terms are governed by the laws of <strong>the Republic of Ghana</strong>, without regard to conflict-of-laws principles. Any dispute arising out of or in connection with these Terms or your use of Gyema shall be submitted to the exclusive jurisdiction of the courts of Ghana.</p>
 
-<h2>13. Changes to these Terms</h2>
-<p>We may update these Terms as Gyema evolves. The "Last updated" date at the top of this page will always reflect the most recent version. Material changes will be communicated via the app. Continuing to use Gyema after a change means you accept the updated Terms.</p>
+  <h2><span class="num">15</span>Contact</h2>
+  <p>Questions about these Terms or about Gyema:</p>
+  <p><strong>Pi Logistics LTD</strong><br>
+  Email: <strong><a href="mailto:gyema@pillgh.com">gyema@pillgh.com</a></strong></p>
 
-<h2>14. Governing law and disputes</h2>
-<p>These Terms are governed by the laws of <strong>the Republic of Ghana</strong>, without regard to conflict-of-laws principles. Any dispute arising out of or in connection with these Terms or your use of Gyema shall be submitted to the exclusive jurisdiction of the courts of Ghana.</p>
+  <p class="closing">By using Gyema you confirm that you have read and agree to these Terms of Service and the Privacy Policy.</p>
+</main>
 
-<h2>15. Contact</h2>
-<p>Questions about these Terms or about Gyema:<br>
-<strong>Pi Logistics LTD</strong><br>
-Email: <strong><a href="mailto:pillghana@gmail.com">pillghana@gmail.com</a></strong></p>
-
-<hr>
-<p class="meta">By using Gyema you confirm that you have read and agree to these Terms of Service and the Privacy Policy.</p>
+<footer>
+  &copy; 2026 Pi Logistics LTD &middot; Gyema &middot; Built in Ghana &#127468;&#127469;
+</footer>
 
 </body>
 </html>
