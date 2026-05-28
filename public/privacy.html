@@ -1,105 +1,302 @@
-Gyema Privacy Policy
-Last updated: 28 May 2026
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gyema — Privacy Policy</title>
+<style>
+  :root {
+    --navy: #16213e;
+    --navy-deep: #0f1629;
+    --green: #1b6b3a;
+    --green-bright: #21944e;
+    --gold: #f0a500;
+    --gold-soft: #f7c948;
+    --ink: #1a1a2e;
+    --muted: #5b6172;
+    --line: #e7e9f0;
+    --bg: #fbfbfd;
+    --card: #ffffff;
+  }
 
-Gyema is a peer-to-peer delivery coordination service operated by Pi Logistics LTD. It connects Pioneers travelling between cities ("Travellers") with Pioneers who need packages delivered ("Senders") on the Pi Network. This policy explains exactly what data Gyema collects, how it is used, and who can see it.
+  * { box-sizing: border-box; margin: 0; padding: 0; }
 
-We have written this policy to describe Gyema as it works today (Version 1). Where features are planned for future versions, we say so explicitly.
+  html { -webkit-text-size-adjust: 100%; }
 
-1. Who we are
-Gyema is operated by Pi Logistics LTD. The application is accessed through the Pi Browser at https://gyema-app-mainnet.vercel.app (and, once available, via its gyema.pi Pi Network domain).
+  body {
+    font-family: "Segoe UI", Roboto, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    line-height: 1.65;
+    background: var(--bg);
+    font-size: 16px;
+  }
 
-For any privacy questions, contact us at gyema@pillgh.com.
+  /* ---- Header banner ---- */
+  .masthead {
+    background: linear-gradient(135deg, var(--navy-deep) 0%, var(--navy) 45%, var(--green) 100%);
+    color: #fff;
+    padding: 38px 22px 30px;
+    position: relative;
+    overflow: hidden;
+  }
+  .masthead::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 5px;
+    background: linear-gradient(90deg,
+      #ce1126 0%, #ce1126 33%,
+      var(--gold) 33%, var(--gold) 66%,
+      var(--green-bright) 66%, var(--green-bright) 100%);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  .logo {
+    width: 52px; height: 52px;
+    border-radius: 14px;
+    background: linear-gradient(145deg, #2a2150, #1a1330);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  }
+  .logo span {
+    font-size: 30px;
+    font-weight: 800;
+    color: var(--gold);
+    line-height: 1;
+  }
+  .brand-text h1 {
+    font-size: 1.5em;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .brand-text .tag {
+    font-size: 0.82em;
+    color: rgba(255,255,255,0.7);
+    font-weight: 400;
+    margin-top: 2px;
+  }
+  .doc-title {
+    max-width: 760px;
+    margin: 26px auto 0;
+    font-size: 1.1em;
+    font-weight: 600;
+    color: var(--gold-soft);
+  }
+  .updated {
+    max-width: 760px;
+    margin: 4px auto 0;
+    font-size: 0.85em;
+    color: rgba(255,255,255,0.65);
+  }
 
-2. What we collect
-Gyema collects only the information needed to operate the service. We do not collect anything else.
+  /* ---- Body ---- */
+  main {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 34px 22px 90px;
+  }
+  .lede {
+    font-size: 1.05em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .lede + .lede { margin-bottom: 0; }
 
-2.1 Information from your Pi account
-When you sign in with Pi, Gyema requests only the username permission scope. This means we receive:
+  h2 {
+    font-size: 1.15em;
+    font-weight: 700;
+    color: var(--navy);
+    margin: 2.4em 0 0.5em;
+    padding-bottom: 0.35em;
+    border-bottom: 2px solid var(--line);
+  }
+  h2 .num {
+    color: var(--gold);
+    margin-right: 0.4em;
+    font-weight: 800;
+  }
+  h3 {
+    font-size: 1.02em;
+    font-weight: 600;
+    color: var(--green);
+    margin: 1.5em 0 0.4em;
+  }
+  p { margin: 0.7em 0; }
+  ul { margin: 0.6em 0 0.6em 0; padding-left: 1.3em; }
+  li { margin: 0.35em 0; }
+  a { color: var(--green-bright); font-weight: 600; text-decoration: none; border-bottom: 1px solid rgba(33,148,78,0.3); }
+  a:hover { border-bottom-color: var(--green-bright); }
+  strong { color: var(--ink); font-weight: 700; }
+  code {
+    background: #f1f2f6;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 0.88em;
+    font-family: "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
+    color: #3a3f55;
+  }
+  hr { border: none; border-top: 1px solid var(--line); margin: 1.6em 0; }
 
-Your Pi username
-Your Pi user ID (a unique identifier issued by Pi Network)
-To keep you signed in and linked to your delivery history, Gyema creates a secure account record on our infrastructure (via Supabase) associated with your Pi username and user ID. This account record holds only your Pi username, your Pi user ID, and your listings — no email, phone, wallet, or KYC data.
+  .callout {
+    background: linear-gradient(180deg, #fffaf0, #fff8e8);
+    border-left: 4px solid var(--gold);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 1.2em 0;
+  }
+  .callout p { margin: 0; }
 
-We do not receive your email address, your phone number, your Pi wallet address, your transaction history, your KYC details, or any other Pi profile information.
+  footer {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 22px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 0.85em;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
 
-2.2 Information you provide when posting a listing
-When you post a delivery (as a Sender) or register a trip (as a Traveller), you choose to provide:
+<header class="masthead">
+  <div class="brand">
+    <div class="logo"><span>&#960;</span></div>
+    <div class="brand-text">
+      <h1>Gyema</h1>
+      <div class="tag">P2P Delivery on Pi &middot; Built in Ghana</div>
+    </div>
+  </div>
+  <div class="doc-title">Privacy Policy</div>
+  <div class="updated">Last updated: 28 May 2026</div>
+</header>
 
-Origin city and destination city
-Travel date or required delivery date
-Capacity, package size, or other notes you enter
-A price or offer in Pi (π)
-A WhatsApp number you wish to be reached on
-The WhatsApp number is the only contact detail Gyema stores, and you provide it voluntarily for the purpose of being contacted by the other party.
+<main>
+  <p class="lede">Gyema is a peer-to-peer delivery coordination service operated by <strong>Pi Logistics LTD</strong>. It connects Pioneers travelling between cities ("Travellers") with Pioneers who need packages delivered ("Senders") on the Pi Network. This policy explains exactly what data Gyema collects, how it is used, and who can see it.</p>
+  <p class="lede">We have written this policy to describe Gyema as it works today (Version 1). Where features are planned for future versions, we say so explicitly.</p>
 
-2.3 Information generated automatically
-When you post a listing, Gyema generates:
+  <h2><span class="num">1</span>Who we are</h2>
+  <p>Gyema is operated by <strong>Pi Logistics LTD</strong>. The application is accessed through the Pi Browser at <code>https://gyema-app-mainnet.vercel.app</code> (and, once available, via its <code>gyema.pi</code> Pi Network domain).</p>
+  <p>For any privacy questions, contact us at <strong><a href="mailto:gyema@pillgh.com">gyema@pillgh.com</a></strong>.</p>
 
-A tracking identifier (e.g. GYM-XXXXXX)
-A creation timestamp and listing status
-2.4 Information stored only on your device
-The following are stored in your browser's local storage and never sent to us:
+  <h2><span class="num">2</span>What we collect</h2>
+  <p>Gyema collects only the information needed to operate the service. We do not collect anything else.</p>
 
-Your selected role (Traveller or Sender)
-A copy of your Pi username and user ID for re-loading the app
-Whether you have dismissed the KYC reminder card
-3. What we do NOT collect
-To be explicit, Gyema V1 does not:
+  <h3>2.1 Information from your Pi account</h3>
+  <p>When you sign in with Pi, Gyema requests only the <code>username</code> permission scope. This means we receive:</p>
+  <ul>
+    <li>Your Pi username</li>
+    <li>Your Pi user ID (a unique identifier issued by Pi Network)</li>
+  </ul>
+  <p>To keep you signed in and linked to your delivery history, Gyema creates a secure account record on our infrastructure (via Supabase) associated with your Pi username and user ID. This account record holds only your Pi username, your Pi user ID, and your listings — no email, phone, wallet, or KYC data.</p>
+  <p>We do <strong>not</strong> receive your email address, your phone number, your Pi wallet address, your transaction history, your KYC details, or any other Pi profile information.</p>
 
-Track your real-time location or GPS position
-Collect your email address or any phone number other than the WhatsApp number you voluntarily enter
-Read, store, or transmit messages between users — Gyema has no in-app chat
-Access your Pi wallet balance, wallet address, or transaction history
-Process payments — coordination and payment for V1 happens off-platform between users
-Use cookies for advertising or analytics tracking
-4. How your information is visible to others
-This section is important. Listings on Gyema are publicly visible to everyone using the app. When you post a listing, the cities, dates, prices, notes, your Pi username, and the WhatsApp number you provided can be seen by any other Pioneer browsing Gyema, not only by users who eventually agree to a delivery with you.
+  <h3>2.2 Information you provide when posting a listing</h3>
+  <p>When you post a delivery (as a Sender) or register a trip (as a Traveller), you choose to provide:</p>
+  <ul>
+    <li>Origin city and destination city</li>
+    <li>Travel date or required delivery date</li>
+    <li>Capacity, package size, or other notes you enter</li>
+    <li>A price or offer in Pi (&#960;)</li>
+    <li>A WhatsApp number you wish to be reached on</li>
+  </ul>
+  <p>The WhatsApp number is the only contact detail Gyema stores, and you provide it voluntarily for the purpose of being contacted by the other party.</p>
 
-By posting a listing, you consent to this visibility. If you do not want a particular WhatsApp number to be public, do not enter it.
+  <h3>2.3 Information generated automatically</h3>
+  <p>When you post a listing, Gyema generates:</p>
+  <ul>
+    <li>A tracking identifier (e.g. <code>GYM-XXXXXX</code>)</li>
+    <li>A creation timestamp and listing status</li>
+  </ul>
 
-5. How we use your information
-We use your information solely to:
+  <h3>2.4 Information stored only on your device</h3>
+  <p>The following are stored in your browser's local storage and never sent to us:</p>
+  <ul>
+    <li>Your selected role (Traveller or Sender)</li>
+    <li>A copy of your Pi username and user ID for re-loading the app</li>
+    <li>Whether you have dismissed the KYC reminder card</li>
+  </ul>
 
-Operate the marketplace (display Sender deliveries to Travellers and vice versa)
-Generate and display tracking identifiers
-Allow the two parties to a potential delivery to contact each other off-platform via WhatsApp or Pi Browser
-We do not use your information for advertising, profiling, or marketing communications. We do not sell or rent any data.
+  <h2><span class="num">3</span>What we do NOT collect</h2>
+  <p>To be explicit, Gyema V1 does <strong>not</strong>:</p>
+  <ul>
+    <li>Track your real-time location or GPS position</li>
+    <li>Collect your email address or any phone number other than the WhatsApp number you voluntarily enter</li>
+    <li>Read, store, or transmit messages between users — Gyema has no in-app chat</li>
+    <li>Access your Pi wallet balance, wallet address, or transaction history</li>
+    <li>Process payments — coordination and payment for V1 happens off-platform between users</li>
+    <li>Use cookies for advertising or analytics tracking</li>
+  </ul>
 
-6. Where your data is stored and who processes it
-Gyema relies on the following service providers to operate. They process data on our behalf as part of running the service:
+  <h2><span class="num">4</span>How your information is visible to others</h2>
+  <div class="callout">
+    <p>This section is important. <strong>Listings on Gyema are publicly visible to everyone using the app.</strong> When you post a listing, the cities, dates, prices, notes, your Pi username, and the WhatsApp number you provided can be seen by any other Pioneer browsing Gyema, not only by users who eventually agree to a delivery with you.</p>
+  </div>
+  <p>By posting a listing, you consent to this visibility. If you do not want a particular WhatsApp number to be public, do not enter it.</p>
 
-Pi Network — authenticates your identity and provides your Pi username/user ID. Pi Network's own privacy policies apply to what Pi collects from you directly. See https://minepi.com/privacy.
-Supabase — hosts the listings database and your Gyema account record. Listings (including the WhatsApp numbers you provide), your Pi username, and your Pi user ID are stored on Supabase infrastructure.
-Vercel — hosts the Gyema web application and serves it to your browser.
-When you tap the WhatsApp button on a listing, you leave Gyema and enter WhatsApp directly. Your interactions on WhatsApp are governed by WhatsApp's privacy policy, not by Gyema.
+  <h2><span class="num">5</span>How we use your information</h2>
+  <p>We use your information solely to:</p>
+  <ul>
+    <li>Operate the marketplace (display Sender deliveries to Travellers and vice versa)</li>
+    <li>Generate and display tracking identifiers</li>
+    <li>Allow the two parties to a potential delivery to contact each other off-platform via WhatsApp or Pi Browser</li>
+  </ul>
+  <p>We do <strong>not</strong> use your information for advertising, profiling, or marketing communications. We do not sell or rent any data.</p>
 
-7. Data security
-We use industry-standard technical measures to protect listings stored in Supabase, including encrypted connections (HTTPS) between your device, Gyema, and our service providers. Despite reasonable precautions, no online service can guarantee absolute security.
+  <h2><span class="num">6</span>Where your data is stored and who processes it</h2>
+  <p>Gyema relies on the following service providers to operate. They process data on our behalf as part of running the service:</p>
+  <ul>
+    <li><strong>Pi Network</strong> — authenticates your identity and provides your Pi username/user ID. Pi Network's own privacy policies apply to what Pi collects from you directly. See <a href="https://minepi.com/privacy" target="_blank" rel="noopener">https://minepi.com/privacy</a>.</li>
+    <li><strong>Supabase</strong> — hosts the listings database and your Gyema account record. Listings (including the WhatsApp numbers you provide), your Pi username, and your Pi user ID are stored on Supabase infrastructure.</li>
+    <li><strong>Vercel</strong> — hosts the Gyema web application and serves it to your browser.</li>
+  </ul>
+  <p>When you tap the WhatsApp button on a listing, you leave Gyema and enter WhatsApp directly. Your interactions on WhatsApp are governed by WhatsApp's privacy policy, not by Gyema.</p>
 
-8. Your rights and choices
-You can:
+  <h2><span class="num">7</span>Data security</h2>
+  <p>We use industry-standard technical measures to protect listings stored in Supabase, including encrypted connections (HTTPS) between your device, Gyema, and our service providers. Despite reasonable precautions, no online service can guarantee absolute security.</p>
 
-Sign out at any time using "Disconnect Pi" on the Profile screen, which removes your Pi credentials from your device.
-Request deletion of a specific listing by emailing gyema@pillgh.com with your Pi username and the tracking ID (e.g. GYM-XXXXXX). We will action the request within 30 days.
-Request deletion of all your data tied to your Pi user ID by emailing gyema@pillgh.com from a verifiable channel. We will respond within 30 days.
-A self-service "delete listing" option is planned for a future version of Gyema. Until it is available, please use the email request method above.
+  <h2><span class="num">8</span>Your rights and choices</h2>
+  <p>You can:</p>
+  <ul>
+    <li><strong>Sign out</strong> at any time using "Disconnect Pi" on the Profile screen, which removes your Pi credentials from your device.</li>
+    <li><strong>Request deletion of a specific listing</strong> by emailing <a href="mailto:gyema@pillgh.com">gyema@pillgh.com</a> with your Pi username and the tracking ID (e.g. <code>GYM-XXXXXX</code>). We will action the request within 30 days.</li>
+    <li><strong>Request deletion of all your data</strong> tied to your Pi user ID by emailing <a href="mailto:gyema@pillgh.com">gyema@pillgh.com</a> from a verifiable channel. We will respond within 30 days.</li>
+  </ul>
+  <p>A self-service "delete listing" option is planned for a future version of Gyema. Until it is available, please use the email request method above.</p>
 
-9. Children
-Gyema is intended for Pi Network Pioneers, who are required by Pi to be 18 years or older. Gyema does not knowingly collect data from children under 18.
+  <h2><span class="num">9</span>Children</h2>
+  <p>Gyema is intended for Pi Network Pioneers, who are required by Pi to be 18 years or older. Gyema does not knowingly collect data from children under 18.</p>
 
-10. Future features (not part of V1)
-The following are planned for a future version of Gyema and are not active today. When they launch, this policy will be updated and you will be re-notified before the new processing begins:
+  <h2><span class="num">10</span>Future features (not part of V1)</h2>
+  <p>The following are planned for a future version of Gyema and are <strong>not</strong> active today. When they launch, this policy will be updated and you will be re-notified before the new processing begins:</p>
+  <ul>
+    <li><strong>In-app payments and escrow.</strong> We plan to introduce a Pi-based escrow system that will require additional Pi permissions (e.g. <code>payments</code>) and store transaction state. This is not active in V1.</li>
+    <li><strong>Live delivery tracking.</strong> A future location-sharing feature, opt-in only, may share approximate location during an active delivery.</li>
+    <li><strong>Dispute resolution.</strong> A future system to handle disagreements between Senders and Travellers.</li>
+    <li><strong>Self-service listing deletion.</strong> A "delete" or "cancel" control on each of your own listings.</li>
+  </ul>
+  <p>We will not enable any of these features without first updating this policy.</p>
 
-In-app payments and escrow. We plan to introduce a Pi-based escrow system that will require additional Pi permissions (e.g. payments) and store transaction state. This is not active in V1.
-Live delivery tracking. A future location-sharing feature, opt-in only, may share approximate location during an active delivery.
-Dispute resolution. A future system to handle disagreements between Senders and Travellers.
-Self-service listing deletion. A "delete" or "cancel" control on each of your own listings.
-We will not enable any of these features without first updating this policy.
+  <h2><span class="num">11</span>Changes to this policy</h2>
+  <p>We may update this policy as Gyema evolves. The "Last updated" date at the top of this policy will always reflect the most recent version. Material changes will be communicated via the app.</p>
 
-11. Changes to this policy
-We may update this policy as Gyema evolves. The "Last updated" date at the top of this policy will always reflect the most recent version. Material changes will be communicated via the app.
+  <h2><span class="num">12</span>Contact</h2>
+  <p>Questions, concerns, or data deletion requests:</p>
+  <p><strong>Pi Logistics LTD</strong><br>
+  Email: <strong><a href="mailto:gyema@pillgh.com">gyema@pillgh.com</a></strong></p>
+</main>
 
-12. Contact
-Questions, concerns, or data deletion requests:
-Pi Logistics LTD
-Email: gyema@pillgh.com
+<footer>
+  &copy; 2026 Pi Logistics LTD &middot; Gyema &middot; Built in Ghana &#127468;&#127469;
+</footer>
+
+</body>
+</html>
