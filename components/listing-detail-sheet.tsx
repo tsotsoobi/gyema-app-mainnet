@@ -18,12 +18,18 @@ import {
   cancelMatchedListingAsync,
   confirmCompletionAsync,
 } from "@/lib/listings-async"
-import { signInAndPersist, type PiUser } from "@/lib/pi-network"
+import { createU2APayment, signInAndPersist, type PiUser } from "@/lib/pi-network"
 
 // localStorage key used to persist the user's WhatsApp number across sessions.
 // V1.1 keeps this device-local; V2 moves it server-side once we have a profiles
 // table. See the WhatsApp prompt in the Accept flow below.
 const WHATSAPP_STORAGE_KEY = "gyema_whatsapp"
+
+// Flat connection fee (in π) charged via U2A when a Pioneer accepts a
+// listing. Paying it unlocks the counterparty's contact. This is Gyema's
+// Option A revenue: the sender pays the traveller directly, peer-to-peer,
+// and Gyema charges this flat fee for making the match.
+const CONNECTION_FEE_PI = 2
 
 // The viewer's role with respect to this listing.
 // - "sender" or "traveller": viewer is a party to the delivery (poster or matched)
@@ -200,6 +206,32 @@ export function ListingDetailSheet({
       }
     }
 
+    // Connection fee (U2A). Charge BEFORE accepting, so a listing's contact
+    // is never unlocked without payment. If the Pioneer cancels the Pi
+    // dialog or the payment fails, abort and do not claim the match.
+    try {
+      await createU2APayment({
+        amount: CONNECTION_FEE_PI,
+        memo: `Gyema connection fee · ${listing.trackingId}`,
+        metadata: {
+          type: "connection_fee",
+          app: "gyema",
+          listingId: listing.id,
+          trackingId: listing.trackingId,
+        },
+      })
+    } catch (err) {
+      console.error("[gyema] connection fee payment failed:", err)
+      const msg = err instanceof Error ? err.message : "Payment failed."
+      setActionError(
+        msg === "Payment cancelled."
+          ? "Payment cancelled. You can accept when you're ready to pay the connection fee."
+          : `Payment could not be completed: ${msg}`,
+      )
+      setAcceptPending(false)
+      return
+    }
+
     try {
       const updated = await acceptListingAsync({
         listingId: listing.id,
@@ -208,8 +240,12 @@ export function ListingDetailSheet({
         accepterWhatsapp: numberToUse,
       })
       if (!updated) {
+        // Rare race: the listing was accepted by someone else between the
+        // fee payment and this update. The Pioneer already paid, so this is
+        // a refund case — Gyema controls the receiving wallet and returns
+        // the fee manually. Keep the copy honest about that.
         setActionError(
-          "This listing is no longer available. Someone may have just accepted it.",
+          `This listing was just accepted by someone else, so the match didn't go through. Your ${CONNECTION_FEE_PI} π connection fee will be refunded.`,
         )
         setAcceptPending(false)
         return
@@ -387,12 +423,10 @@ export function ListingDetailSheet({
             </p>
           </div>
 
-          {/* Coordinate section: only meaningful once parties exist (matched onward).
-              For open listings shown to outsiders, we still surface the poster's
-              contact since that's how they currently make a deal pre-Accept. */}
-          {(role === "sender" ||
-            role === "traveller" ||
-            role === "outsider") &&
+          {/* Coordinate section: contact details for the two matched parties.
+              Outsiders no longer see this on open listings — contact is now a
+              paid unlock gated behind the connection fee in handleAccept. */}
+          {(role === "sender" || role === "traveller") &&
             listing.status !== "completed" &&
             listing.status !== "expired" && (
               <div className="space-y-2 pt-1">
@@ -445,6 +479,26 @@ export function ListingDetailSheet({
               </div>
             )}
 
+          {/* Outsiders on open listings: contact is locked until they accept
+              and pay the connection fee. */}
+          {role === "outsider" && listing.status === "open" && (
+            <div className="space-y-2 pt-1">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                Coordinate
+              </p>
+              <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3">
+                <p className="text-sm font-medium">
+                  🔒 Contact unlocks when you accept
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                  Accept to unlock @{listing.postedByUsername}'s WhatsApp and
+                  coordinate the delivery directly. A flat {CONNECTION_FEE_PI} π
+                  connection fee applies.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Primary action area — depends on viewer role and listing state */}
           <div className="pt-1 space-y-2">
             {/* Guest viewing an open listing: gate the Accept action. */}
@@ -485,8 +539,9 @@ export function ListingDetailSheet({
                   {acceptPending ? "Accepting..." : "Accept this delivery"}
                 </Button>
                 <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-                  By accepting, you agree to coordinate this delivery with{" "}
-                  @{listing.postedByUsername} via WhatsApp or Pi Chat.
+                  A flat {CONNECTION_FEE_PI} π connection fee unlocks{" "}
+                  @{listing.postedByUsername}'s contact. You'll then coordinate
+                  the delivery directly via WhatsApp or Pi Chat.
                 </p>
               </>
             )}
