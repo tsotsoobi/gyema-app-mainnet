@@ -352,27 +352,32 @@ export const getSupabaseSession = () => {
   return inMemorySession
 }
 
-// Create a tiny test payment (0.001 testnet π) to satisfy Pi Develop's
-// "Process a Transaction" checklist item.
+// Generalized user-to-app (U2A) payment. Drives the full Pi payment
+// lifecycle: SDK createPayment -> /api/payments/approve -> SDK completion
+// -> /api/payments/complete. Resolves with { paymentId, txid } after the
+// server confirms completion; rejects on cancel, error, or approval fail.
 //
-// The payment lifecycle requires server-side approval and completion via
-// /api/payments/approve and /api/payments/complete. Without these, Pi
-// times out the payment with "developer failed to approve" error.
-export const createTestPayment = async (): Promise<string> => {
+// This is the exact path the checklist test used, now parameterized so
+// real charges (the service fee) reuse the same proven plumbing.
+export const createU2APayment = async (input: {
+  amount: number
+  memo: string
+  metadata: Record<string, unknown>
+}): Promise<{ paymentId: string; txid: string }> => {
   if (!isPiSdkAvailable()) {
     throw new Error(
-      "Pi SDK not available. Open Gyema inside Pi Browser to test."
+      "Pi SDK not available. Open Gyema inside Pi Browser to pay."
     )
   }
 
   const Pi = window.Pi!
 
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<{ paymentId: string; txid: string }>((resolve, reject) => {
     Pi.createPayment(
       {
-        amount: 0.001,
-        memo: "Gyema test transaction",
-        metadata: { type: "checklist_test", app: "gyema" },
+        amount: input.amount,
+        memo: input.memo,
+        metadata: input.metadata,
       },
       {
         onReadyForServerApproval: async (paymentId: string) => {
@@ -407,8 +412,7 @@ export const createTestPayment = async (): Promise<string> => {
               reject(new Error("Server completion failed"))
               return
             }
-            // Resolve only after server confirms completion.
-            resolve(paymentId)
+            resolve({ paymentId, txid })
           } catch (err) {
             console.error("[gyema] Complete fetch error:", err)
             reject(err instanceof Error ? err : new Error("Complete fetch failed"))
@@ -425,6 +429,18 @@ export const createTestPayment = async (): Promise<string> => {
       }
     ).catch(reject)
   })
+}
+
+// Checklist test payment — now a thin wrapper over createU2APayment,
+// preserving the original behavior (0.001 testnet π, checklist metadata)
+// so the debug card on the Profile tab keeps working unchanged.
+export const createTestPayment = async (): Promise<string> => {
+  const { paymentId } = await createU2APayment({
+    amount: 0.001,
+    memo: "Gyema test transaction",
+    metadata: { type: "checklist_test", app: "gyema" },
+  })
+  return paymentId
 }
 
 // Local-storage helpers for role persistence between sessions.
