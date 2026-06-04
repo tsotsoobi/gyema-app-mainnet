@@ -435,7 +435,14 @@ export const createU2APayment = async (input: {
           reject(error)
         },
       }
-    ).catch(reject)
+    )
+    // We intentionally do NOT chain .catch on Pi.createPayment. The Pi SDK's
+    // createPayment is callback-driven and does not reliably return a Promise
+    // (it can return undefined, e.g. when an incomplete payment from a prior
+    // attempt exists), so ".catch(reject)" throws "createPayment(...).catch is
+    // not a function". This promise already settles via the onError / onCancel
+    // callbacks above, and a synchronous throw inside the executor is caught by
+    // the Promise constructor, so no trailing .catch is needed.
   })
 }
 
