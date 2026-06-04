@@ -370,6 +370,14 @@ export const createU2APayment = async (input: {
     )
   }
 
+  // Ensure the Pi SDK has a payments-scoped session before creating a payment.
+  // On a restored (cold-mount) session, Pi.authenticate has not run this page
+  // session, so the SDK lacks the "payments" scope and createPayment fails with
+  // "Cannot create a payment without payments scope". authenticateWithPi
+  // requests ["username", "payments"] and is effectively idempotent once the
+  // Pioneer has granted it, so it is safe to call before every payment.
+  await authenticateWithPi()
+
   const Pi = window.Pi!
 
   return new Promise<{ paymentId: string; txid: string }>((resolve, reject) => {
