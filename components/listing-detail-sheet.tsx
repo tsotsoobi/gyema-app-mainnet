@@ -134,22 +134,24 @@ export function ListingDetailSheet({
   const date =
     listing.kind === "trip" ? listing.travelDate : listing.deliverBy
 
-  // Whose WhatsApp to surface in the Coordinate section.
-  // Open listings: always show the poster's number (no one else exists yet).
-  // Matched listings: show the OTHER party's number to whoever is viewing.
-  const otherPartyWhatsapp =
-    role === "sender"
-      ? listing.matchedWithWhatsapp ?? listing.whatsapp
-      : role === "traveller"
-        ? listing.whatsapp
-        : listing.whatsapp
+  // Whose contact to surface in the Coordinate section. The rule is simply
+  // "show the other person", so it keys on poster-vs-matched IDENTITY, not
+  // the sender/traveller delivery role (which is independent of who posted
+  // and was the source of the earlier bug where a viewer saw their own
+  // number):
+  //   - viewer is the POSTER   -> show the matched accepter's contact
+  //   - viewer is the ACCEPTER -> show the poster's contact
+  // For open listings the contact stays locked, so these only surface once
+  // the listing is matched and the viewer is one of the two parties.
+  const viewerIsPoster = listing.postedById === currentUser.uid
 
-  const otherPartyUsername =
-    role === "sender"
-      ? listing.matchedWithUsername ?? listing.postedByUsername
-      : role === "traveller"
-        ? listing.postedByUsername
-        : listing.postedByUsername
+  const otherPartyWhatsapp = viewerIsPoster
+    ? listing.matchedWithWhatsapp
+    : listing.whatsapp
+
+  const otherPartyUsername = viewerIsPoster
+    ? listing.matchedWithUsername
+    : listing.postedByUsername
 
   const whatsappDigits = (otherPartyWhatsapp ?? "").replace(/\D/g, "")
   const whatsappHref = whatsappDigits
