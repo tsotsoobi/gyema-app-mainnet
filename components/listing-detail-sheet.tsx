@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import type { Listing } from "@/lib/listings"
 import {
   acceptListingAsync,
+  releaseListingAsync,
   cancelMatchedListingAsync,
   confirmCompletionAsync,
 } from "@/lib/listings-async"
@@ -206,9 +207,36 @@ export function ListingDetailSheet({
       }
     }
 
-    // Connection fee (U2A). Charge BEFORE accepting, so a listing's contact
-    // is never unlocked without payment. If the Pioneer cancels the Pi
-    // dialog or the payment fails, abort and do not claim the match.
+    // 1) Claim the listing FIRST, server-side and authoritative. The accept
+    //    route uses the service_role client, so it bypasses the listings RLS
+    //    UPDATE policy, which can never authorize the initial claim (at accept
+    //    time the accepter is neither the poster nor yet a matched party, so a
+    //    client-side update touches 0 rows). We do NOT charge yet: if the
+    //    listing is already taken or not open, we stop here with no payment.
+    let claimed: Listing | null = null
+    try {
+      claimed = await acceptListingAsync({
+        listingId: listing.id,
+        accepterWhatsapp: numberToUse,
+      })
+    } catch (err) {
+      console.error("[gyema] claim error:", err)
+      setActionError("Could not accept this listing. Please try again.")
+      setAcceptPending(false)
+      return
+    }
+    if (!claimed) {
+      setActionError(
+        "This listing is no longer available. Someone may have just accepted it.",
+      )
+      setAcceptPending(false)
+      return
+    }
+
+    // 2) Connection fee (U2A). The claim is now held in the Pioneer's name.
+    //    Charge the fee; if the Pioneer cancels the Pi dialog or the payment
+    //    fails, RELEASE the claim so the listing reopens and nobody is charged
+    //    for a match that didn't complete.
     try {
       await createU2APayment({
         amount: CONNECTION_FEE_PI,
@@ -222,42 +250,22 @@ export function ListingDetailSheet({
       })
     } catch (err) {
       console.error("[gyema] connection fee payment failed:", err)
+      // Roll the claim back so the listing returns to open.
+      await releaseListingAsync({ listingId: listing.id })
       const msg = err instanceof Error ? err.message : "Payment failed."
       setActionError(
         msg === "Payment cancelled."
-          ? "Payment cancelled. You can accept when you're ready to pay the connection fee."
-          : `Payment could not be completed: ${msg}`,
+          ? "Payment cancelled, so the match wasn't completed and the listing is open again. You can accept when you're ready to pay the connection fee."
+          : `Payment could not be completed: ${msg}. The listing has been released.`,
       )
       setAcceptPending(false)
       return
     }
 
-    try {
-      const updated = await acceptListingAsync({
-        listingId: listing.id,
-        accepterUserId: currentUser.uid,
-        accepterUsername: currentUser.username,
-        accepterWhatsapp: numberToUse,
-      })
-      if (!updated) {
-        // Rare race: the listing was accepted by someone else between the
-        // fee payment and this update. The Pioneer already paid, so this is
-        // a refund case — Gyema controls the receiving wallet and returns
-        // the fee manually. Keep the copy honest about that.
-        setActionError(
-          `This listing was just accepted by someone else, so the match didn't go through. Your ${CONNECTION_FEE_PI} π connection fee will be refunded.`,
-        )
-        setAcceptPending(false)
-        return
-      }
-      setListing(updated)
-      onListingUpdated?.(updated)
-    } catch (err) {
-      console.error("[gyema] handleAccept error:", err)
-      setActionError("Could not accept this listing. Please try again.")
-    } finally {
-      setAcceptPending(false)
-    }
+    // 3) Paid and matched. Reflect the matched listing (contact now unlocks).
+    setListing(claimed)
+    onListingUpdated?.(claimed)
+    setAcceptPending(false)
   }
 
   const handleConfirmCompletion = async () => {
