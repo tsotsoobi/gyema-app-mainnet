@@ -1,4 +1,5 @@
 import { getAnonClient, getAuthedClient } from "./supabase"
+import { getSupabaseSession } from "./pi-network"
 import type { Listing, PackageSize } from "./listings"
 
 // Database row shape (snake_case, as stored in Supabase)
@@ -246,30 +247,77 @@ export async function createPackageAsync(input: {
 // the accepter so both parties are now stored on the row.
 export async function acceptListingAsync(input: {
   listingId: string
-  accepterUserId: string
-  accepterUsername: string
   accepterWhatsapp: string
 }): Promise<Listing | null> {
-  const { data, error } = await getAuthedClient()
-    .from("listings")
-    .update({
-      status: "matched",
-      matched_with_user_id: input.accepterUserId,
-      matched_with_username: input.accepterUsername,
-      matched_with_whatsapp: input.accepterWhatsapp,
-      matched_at: new Date().toISOString(),
-    })
-    .eq("id", input.listingId)
-    .eq("status", "open") // race guard: only update if still open
-    .select()
-    .single()
-
-  if (error) {
-    console.error("acceptListingAsync error:", error)
+  // The claim runs server-side at /api/listings/accept using the service_role
+  // client. This is required because the listings UPDATE RLS policy only
+  // permits the poster (or an already-matched party) to update a row, which
+  // can never authorize the INITIAL claim: at accept time the accepter is
+  // neither, so a client-side UPDATE touches 0 rows and the accept silently
+  // fails. The route verifies the accepter from their Supabase session token
+  // and writes the claim with elevated privilege, guarded to OPEN, non-owner
+  // rows only.
+  const session = getSupabaseSession()
+  if (!session?.accessToken) {
+    console.error("acceptListingAsync: no active Supabase session")
     return null
   }
 
-  return data ? fromRow(data as ListingRow) : null
+  try {
+    const res = await fetch("/api/listings/accept", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        accessToken: session.accessToken,
+        listingId: input.listingId,
+        accepterWhatsapp: input.accepterWhatsapp,
+      }),
+    })
+    const body = (await res.json()) as {
+      ok: boolean
+      listing?: ListingRow
+      reason?: string
+    }
+    if (!res.ok || !body.ok || !body.listing) {
+      console.warn("acceptListingAsync: claim not completed:", body?.reason)
+      return null
+    }
+    return fromRow(body.listing)
+  } catch (err) {
+    console.error("acceptListingAsync error:", err)
+    return null
+  }
+}
+
+// Release a claim the current accepter made, reverting the listing to 'open'.
+// Used to roll back when the connection-fee payment is cancelled or fails
+// after a successful claim, so a listing is never left matched-but-unpaid.
+// Runs server-side at /api/listings/release, scoped to the caller's own
+// still-'matched' claim (verified from their session token).
+export async function releaseListingAsync(input: {
+  listingId: string
+}): Promise<boolean> {
+  const session = getSupabaseSession()
+  if (!session?.accessToken) {
+    console.error("releaseListingAsync: no active Supabase session")
+    return false
+  }
+
+  try {
+    const res = await fetch("/api/listings/release", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        accessToken: session.accessToken,
+        listingId: input.listingId,
+      }),
+    })
+    const body = (await res.json()) as { ok: boolean; reason?: string }
+    return Boolean(res.ok && body.ok)
+  } catch (err) {
+    console.error("releaseListingAsync error:", err)
+    return false
+  }
 }
 
 // Confirm completion of a delivery from one party's side.
