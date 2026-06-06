@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { type Listing } from "@/lib/listings"
 import { getListingsByUserAsync } from "@/lib/listings-async"
 import { isGuest, type PiUser, type UserRole } from "@/lib/pi-network"
+import { ListingDetailSheet } from "./listing-detail-sheet"
 
 interface TripsTabProps {
   user: PiUser
@@ -22,8 +23,15 @@ interface TripsTabProps {
 // 'completed' is reserved for the v2 confirmation flow.
 const PAST_STATUSES = new Set(["expired", "completed"])
 
-export function TripsTab({ user, role, refreshKey, onNavigate }: TripsTabProps) {
+export function TripsTab({
+  user,
+  role,
+  refreshKey,
+  onNavigate,
+  onSignedIn,
+}: TripsTabProps) {
   const [myListings, setMyListings] = useState<Listing[]>([])
+  const [selected, setSelected] = useState<Listing | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -42,11 +50,17 @@ export function TripsTab({ user, role, refreshKey, onNavigate }: TripsTabProps) 
     }
   }, [user.uid, refreshKey])
 
-  // Split by kind first (role-appropriate listings only),
-  // then by active/past based on status.
-  const myTrips = myListings.filter((l) => l.kind === "trip")
-  const myPackages = myListings.filter((l) => l.kind === "package")
-  const visibleListings = role === "traveller" ? myTrips : myPackages
+  // Group by the user's ROLE on each listing, not by listing kind. Posting a
+  // trip makes you the traveller; accepting a trip makes you the sender;
+  // posting a package makes you the sender; accepting a package to carry makes
+  // you the traveller. Keying on kind alone filed accepted trips under the
+  // wrong tab.
+  const roleOnListing = (l: Listing): UserRole => {
+    const isPoster = l.postedById === user.uid
+    if (l.kind === "trip") return isPoster ? "traveller" : "sender"
+    return isPoster ? "sender" : "traveller" // package
+  }
+  const visibleListings = myListings.filter((l) => roleOnListing(l) === role)
 
   const activeListings = visibleListings.filter(
     (l) => !PAST_STATUSES.has(l.status)
@@ -106,7 +120,12 @@ export function TripsTab({ user, role, refreshKey, onNavigate }: TripsTabProps) 
           </Card>
         ) : (
           activeListings.map((l) => (
-            <ListingCard key={l.id} listing={l} muted={false} />
+            <ListingCard
+              key={l.id}
+              listing={l}
+              muted={false}
+              onOpen={() => setSelected(l)}
+            />
           ))
         )}
       </div>
@@ -124,9 +143,35 @@ export function TripsTab({ user, role, refreshKey, onNavigate }: TripsTabProps) 
           </div>
 
           {pastListings.map((l) => (
-            <ListingCard key={l.id} listing={l} muted={true} />
+            <ListingCard
+              key={l.id}
+              listing={l}
+              muted={true}
+              onOpen={() => setSelected(l)}
+            />
           ))}
         </div>
+      )}
+
+      {selected && (
+        <ListingDetailSheet
+          listing={selected}
+          currentUser={{
+            uid: user.uid,
+            username: user.username,
+            whatsapp: undefined,
+          }}
+          onClose={() => setSelected(null)}
+          onSignedIn={onSignedIn}
+          onListingUpdated={(updated) => {
+            // My Activity is a review surface, so keep the listing in place
+            // and just reflect its new state (matched, open, cancelled, etc.).
+            setMyListings((prev) =>
+              prev.map((l) => (l.id === updated.id ? updated : l)),
+            )
+            setSelected(updated)
+          }}
+        />
       )}
     </div>
   )
@@ -138,13 +183,24 @@ export function TripsTab({ user, role, refreshKey, onNavigate }: TripsTabProps) 
 function ListingCard({
   listing,
   muted,
+  onOpen,
 }: {
   listing: Listing
   muted: boolean
+  onOpen: () => void
 }) {
   return (
     <Card
-      className={`p-4 space-y-2 ${
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          onOpen()
+        }
+      }}
+      className={`p-4 space-y-2 cursor-pointer transition-colors hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
         muted ? "bg-muted/40 border-muted opacity-70" : ""
       }`}
     >
