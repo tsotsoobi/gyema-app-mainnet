@@ -30,7 +30,7 @@ const WHATSAPP_STORAGE_KEY = "gyema_whatsapp"
 // listing. Paying it unlocks the counterparty's contact. This is Gyema's
 // Option A revenue: the sender pays the traveller directly, peer-to-peer,
 // and Gyema charges this flat fee for making the match.
-const CONNECTION_FEE_PI = 2
+const CONNECTION_FEE_PI = 1
 
 // The viewer's role with respect to this listing.
 // - "sender" or "traveller": viewer is a party to the delivery (poster or matched)
@@ -501,9 +501,9 @@ export function ListingDetailSheet({
                   🔒 Contact unlocks when you accept
                 </p>
                 <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
-                  Accept to unlock @{listing.postedByUsername}'s WhatsApp and
-                  coordinate the delivery directly. A flat {CONNECTION_FEE_PI} π
-                  connection fee applies.
+                  Accept to unlock @{listing.postedByUsername}'s contact, then
+                  arrange the delivery and settle payment directly, peer to peer.
+                  A flat {CONNECTION_FEE_PI} π fee applies.
                 </p>
               </div>
             </div>
@@ -549,9 +549,9 @@ export function ListingDetailSheet({
                   {acceptPending ? "Accepting..." : "Accept this delivery"}
                 </Button>
                 <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-                  A flat {CONNECTION_FEE_PI} π connection fee unlocks{" "}
-                  @{listing.postedByUsername}'s contact. You'll then coordinate
-                  the delivery directly via WhatsApp or Pi Chat.
+                  A flat {CONNECTION_FEE_PI} π fee unlocks{" "}
+                  @{listing.postedByUsername}'s contact. You then settle the
+                  delivery and payment with them directly via WhatsApp or Pi Chat.
                 </p>
               </>
             )}
