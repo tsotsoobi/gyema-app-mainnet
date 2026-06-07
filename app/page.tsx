@@ -9,6 +9,9 @@ import { TripsTab } from "@/components/trips-tab"
 import { TrackTab } from "@/components/track-tab"
 import { ProfileTab } from "@/components/profile-tab"
 import { WelcomeSheet } from "@/components/welcome-sheet"
+import { ListingDetailSheet } from "@/components/listing-detail-sheet"
+import { getListingByTrackingIdAsync } from "@/lib/listings-async"
+import type { Listing } from "@/lib/listings"
 import {
   clearStoredAuth,
   getStoredRole,
@@ -28,6 +31,8 @@ export default function Gyema() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [hydrated, setHydrated] = useState(false)
   const [showWelcome, setShowWelcome] = useState(false)
+  const [deepListing, setDeepListing] = useState<Listing | null>(null)
+  const [pendingShareId, setPendingShareId] = useState<string | null>(null)
 
   useEffect(() => {
     const storedRole = getStoredRole()
@@ -84,6 +89,37 @@ export default function Gyema() {
       // localStorage may throw in private browsing or restricted contexts.
     }
   }, [])
+
+  // Deep link: a shared link of the form ?listing=GYM-XXXX (opened in Pi
+  // Browser via a pi:// share link) should land on that listing. Capture the
+  // code on mount and strip it from the URL so a later refresh doesn't reopen
+  // the sheet unexpectedly.
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const code = new URLSearchParams(window.location.search).get("listing")
+    if (code) {
+      setPendingShareId(code)
+      window.history.replaceState({}, "", window.location.pathname)
+    }
+  }, [])
+
+  // Resolve the deep-linked listing once hydration settles. The lookup is the
+  // public tracking-id read, so it works even before the viewer signs in; the
+  // sheet itself gates Accept behind sign-in for guests.
+  useEffect(() => {
+    if (!pendingShareId || !hydrated) return
+    let cancelled = false
+    ;(async () => {
+      const found = await getListingByTrackingIdAsync(pendingShareId)
+      if (!cancelled) {
+        if (found) setDeepListing(found)
+        setPendingShareId(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [pendingShareId, hydrated])
 
   const dismissWelcome = () => {
     setShowWelcome(false)
@@ -180,6 +216,20 @@ export default function Gyema() {
       )}
 
       <BottomNav active={activeTab} onChange={setActiveTab} />
+
+      {deepListing && (
+        <ListingDetailSheet
+          listing={deepListing}
+          currentUser={{
+            uid: user.uid,
+            username: user.username,
+            whatsapp: undefined,
+          }}
+          onClose={() => setDeepListing(null)}
+          onSignedIn={handleSignedIn}
+          onListingUpdated={(updated) => setDeepListing(updated)}
+        />
+      )}
 
       {showWelcome && <WelcomeSheet onDismiss={dismissWelcome} />}
     </div>

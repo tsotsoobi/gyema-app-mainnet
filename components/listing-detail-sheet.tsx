@@ -96,6 +96,7 @@ export function ListingDetailSheet({
   const [confirmPending, setConfirmPending] = useState(false)
   const [cancelPending, setCancelPending] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [shareCopied, setShareCopied] = useState(false)
 
   // Persisted WhatsApp number, loaded from localStorage on mount.
   // Falls back to whatever the parent passed in via currentUser.whatsapp
@@ -133,6 +134,35 @@ export function ListingDetailSheet({
   const price = listing.kind === "trip" ? listing.pricePi : listing.offerPi
   const date =
     listing.kind === "trip" ? listing.travelDate : listing.deliverBy
+
+  // --- Share (open listings) --------------------------------------------
+  // A shareable deep link to this listing. Uses Pi's pi:// scheme so a
+  // tapped link opens directly in Pi Browser and lands on the listing via
+  // the ?listing handler in app/page.tsx. Set PI_APP_HOST to whatever host
+  // the app resolves at inside Pi Browser. Switch it to "gyema.pi" once that
+  // domain claim finalizes; until then use the live PiNet subdomain host.
+  const PI_APP_HOST = "gyema8841.pinet.com"
+  const shareUrl = `pi://${PI_APP_HOST}/?listing=${listing.trackingId}`
+  const shareText = `${listing.fromCity} → ${listing.toCity} on Gyema (${price} π). Open in Pi Browser to accept:`
+  const shareXHref = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
+    `${shareText} ${shareUrl}`,
+  )}`
+  const shareWhatsappHref = `https://wa.me/?text=${encodeURIComponent(
+    `${shareText} ${shareUrl}`,
+  )}`
+
+  const handleCopyShareLink = async () => {
+    const payload = `${shareText} ${shareUrl}`
+    try {
+      await navigator.clipboard.writeText(payload)
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 2000)
+    } catch {
+      // Clipboard API can be blocked in some webviews; fall back to a
+      // manual copy prompt so the link is still reachable.
+      window.prompt("Copy this link", payload)
+    }
+  }
 
   // Whose contact to surface in the Coordinate section. The rule is simply
   // "show the other person", so it keys on poster-vs-matched IDENTITY, not
@@ -506,6 +536,57 @@ export function ListingDetailSheet({
                   A flat {CONNECTION_FEE_PI} π fee applies.
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* Share. Only useful while the listing is still open and looking
+              for a counterparty. X and WhatsApp prefill the link; Instagram
+              has no link-share intent, so Copy lets the user paste it into a
+              story, bio, or DM. */}
+          {listing.status === "open" && (
+            <div className="space-y-2 pt-1">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                Share
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <a
+                  href={shareXHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block"
+                >
+                  <Button
+                    variant="outline"
+                    className="w-full h-11 text-xs font-semibold px-1"
+                  >
+                    𝕏 Post
+                  </Button>
+                </a>
+                <a
+                  href={shareWhatsappHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block"
+                >
+                  <Button
+                    variant="outline"
+                    className="w-full h-11 text-xs font-semibold px-1"
+                  >
+                    💬 WhatsApp
+                  </Button>
+                </a>
+                <Button
+                  variant="outline"
+                  className="w-full h-11 text-xs font-semibold px-1"
+                  onClick={handleCopyShareLink}
+                >
+                  {shareCopied ? "✓ Copied" : "🔗 Copy"}
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Copy the link to paste into your Instagram story, bio, or DM.
+                Shared links open this listing in Pi Browser.
+              </p>
             </div>
           )}
 
