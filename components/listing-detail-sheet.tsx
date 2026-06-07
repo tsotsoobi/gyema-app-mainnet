@@ -142,7 +142,7 @@ export function ListingDetailSheet({
   // the app resolves at inside Pi Browser. Switch it to "gyema.pi" once that
   // domain claim finalizes; until then use the live PiNet subdomain host.
   const PI_APP_HOST = "gyema8841.pinet.com"
-  const shareUrl = `pi://${PI_APP_HOST}/?listing=${listing.trackingId}`
+  const shareUrl = `https://${PI_APP_HOST}/?listing=${listing.trackingId}`
   const shareText = `${listing.fromCity} → ${listing.toCity} on Gyema (${price} π). Open in Pi Browser to accept:`
   const shareXHref = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
     `${shareText} ${shareUrl}`,
