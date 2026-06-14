@@ -162,8 +162,23 @@ export function ListingDetailSheet({
       setTimeout(() => setShareCopied(false), 2000)
     } catch {
       // Clipboard API can be blocked in some webviews; fall back to a
-      // manual copy prompt so the link is still reachable.
-      window.prompt("Copy this link", payload)
+      // hidden textarea + execCommand so the copy still succeeds silently
+      // instead of surfacing a prompt() dialog.
+      try {
+        const ta = document.createElement("textarea")
+        ta.value = payload
+        ta.style.position = "fixed"
+        ta.style.opacity = "0"
+        document.body.appendChild(ta)
+        ta.focus()
+        ta.select()
+        document.execCommand("copy")
+        document.body.removeChild(ta)
+        setShareCopied(true)
+        setTimeout(() => setShareCopied(false), 2000)
+      } catch {
+        window.prompt("Copy this link", payload)
+      }
     }
   }
 
