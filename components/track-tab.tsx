@@ -94,7 +94,7 @@ export function TrackTab() {
             <p className="text-xs text-muted-foreground mt-0.5">
               {result.kind === "package"
                 ? result.description
-                : result.notes || "—"}
+                : `${result.capacity || "—"}${result.notes ? ` · ${result.notes}` : ""}`}
             </p>
           </div>
 
