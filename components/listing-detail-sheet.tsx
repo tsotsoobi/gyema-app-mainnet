@@ -143,7 +143,10 @@ export function ListingDetailSheet({
   // domain claim finalizes; until then use the live PiNet subdomain host.
   const PI_APP_HOST = "gyema8841.pinet.com"
   const shareUrl = `https://${PI_APP_HOST}/?listing=${listing.trackingId}`
-  const shareText = `${listing.fromCity} → ${listing.toCity} on Gyema (${price} π). Open in Pi Browser to accept:`
+  const shareText =
+    listing.kind === "package"
+      ? `Sender needs a delivery: ${listing.fromCity} → ${listing.toCity} on Gyema (${price} π). Open in Pi Browser to accept:`
+      : `Traveller heading ${listing.fromCity} → ${listing.toCity} on Gyema, carrying for ${price} π. Open in Pi Browser to offer your parcel:`
   const shareXHref = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
     `${shareText} ${shareUrl}`,
   )}`
