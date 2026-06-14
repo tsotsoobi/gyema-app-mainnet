@@ -221,6 +221,11 @@ function ListingCard({
           {listing.status}
         </Badge>
       </div>
+      <p className="text-xs text-muted-foreground line-clamp-2">
+        {listing.kind === "package"
+          ? `${listing.description || "—"}${listing.size ? ` · ${listing.size}` : ""}`
+          : `${listing.capacity || "—"}${listing.notes ? ` · ${listing.notes}` : ""}`}
+      </p>
       <div className="flex items-center justify-between text-xs">
         <span className="text-muted-foreground">
           📅{" "}
