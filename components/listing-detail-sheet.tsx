@@ -159,8 +159,8 @@ export function ListingDetailSheet({
   const shareUrl = `https://${PI_APP_HOST}/?listing=${listing.trackingId}`
   const shareText =
     listing.kind === "package"
-      ? `Sender needs a delivery: ${listing.fromCity} → ${listing.toCity}${shareDate ? ` on ${shareDate},` : ""} on Gyema (${price} π). Open in Pi Browser to accept:`
-      : `Traveller heading ${listing.fromCity} → ${listing.toCity}${shareDate ? ` on ${shareDate},` : ""} on Gyema, carrying for ${price} π. Open in Pi Browser to offer your parcel:`
+      ? `Gyema Sender needs a delivery ${listing.fromCity} → ${listing.toCity}${shareDate ? ` on ${shareDate},` : ""} paying ${price} π. Open in Pi Browser to connect:`
+      : `Gyema Traveller heading ${listing.fromCity} → ${listing.toCity}${shareDate ? ` on ${shareDate},` : ""} carrying packages for ${price} π. Open in Pi Browser to connect:`
   const shareXHref = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
     `${shareText} ${shareUrl}`,
   )}`
