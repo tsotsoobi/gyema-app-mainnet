@@ -135,6 +135,20 @@ export function ListingDetailSheet({
   const date =
     listing.kind === "trip" ? listing.travelDate : listing.deliverBy
 
+  // Short date for share text (e.g. "Jun 19"); year dropped to keep the
+  // shared line tight. The full date still shows on the listing sheet.
+  const shareDate = date
+    ? (() => {
+        try {
+          return new Date(date).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+          })
+        } catch {
+          return ""
+        }
+      })()
+    : ""
   // --- Share (open listings) --------------------------------------------
   // A shareable deep link to this listing. Uses Pi's pi:// scheme so a
   // tapped link opens directly in Pi Browser and lands on the listing via
@@ -145,8 +159,8 @@ export function ListingDetailSheet({
   const shareUrl = `https://${PI_APP_HOST}/?listing=${listing.trackingId}`
   const shareText =
     listing.kind === "package"
-      ? `Sender needs a delivery: ${listing.fromCity} → ${listing.toCity} on Gyema (${price} π). Open in Pi Browser to accept:`
-      : `Traveller heading ${listing.fromCity} → ${listing.toCity} on Gyema, carrying for ${price} π. Open in Pi Browser to offer your parcel:`
+      ? `Sender needs a delivery: ${listing.fromCity} → ${listing.toCity}${shareDate ? ` on ${shareDate},` : ""} on Gyema (${price} π). Open in Pi Browser to accept:`
+      : `Traveller heading ${listing.fromCity} → ${listing.toCity}${shareDate ? ` on ${shareDate},` : ""} on Gyema, carrying for ${price} π. Open in Pi Browser to offer your parcel:`
   const shareXHref = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
     `${shareText} ${shareUrl}`,
   )}`
