@@ -17,6 +17,7 @@ import {
   acceptListingAsync,
   releaseListingAsync,
   cancelMatchedListingAsync,
+  cancelOpenListingAsync,
   confirmCompletionAsync,
 } from "@/lib/listings-async"
 import { createU2APayment, signInAndPersist, type PiUser } from "@/lib/pi-network"
@@ -393,6 +394,40 @@ export function ListingDetailSheet({
     }
   }
 
+  // Cancel an OPEN listing the viewer posted, before anyone accepts it.
+  // Poster-only (self_open role). Confirms first, then expires the listing
+  // so it leaves the marketplace and moves to the Past section.
+  const handleCancelOpen = async () => {
+    if (role !== "self_open") return
+    const confirmed = window.confirm(
+      "Cancel this listing?\n\n" +
+        "It will be removed from the marketplace and moved to your Past " +
+        (listing.kind === "trip" ? "Trips" : "Deliveries") +
+        ". This cannot be undone.",
+    )
+    if (!confirmed) return
+
+    setCancelPending(true)
+    setActionError(null)
+    try {
+      const updated = await cancelOpenListingAsync({ listingId: listing.id })
+      if (!updated) {
+        setActionError(
+          "Could not cancel this listing. Someone may have just accepted it.",
+        )
+        setCancelPending(false)
+        return
+      }
+      setListing(updated)
+      onListingUpdated?.(updated)
+    } catch (err) {
+      console.error("[gyema] handleCancelOpen error:", err)
+      setActionError("Could not cancel this listing. Please try again.")
+    } finally {
+      setCancelPending(false)
+    }
+  }
+
   // Whether THIS viewer has already confirmed their side.
   const viewerHasConfirmed =
     (role === "sender" && listing.senderConfirmed) ||
@@ -670,10 +705,20 @@ export function ListingDetailSheet({
             )}
 
             {role === "self_open" && (
-              <p className="text-xs text-muted-foreground text-center leading-relaxed">
-                This is your listing. Travellers and Senders will be able to
-                accept it from their side.
-              </p>
+              <>
+                <p className="text-xs text-muted-foreground text-center leading-relaxed">
+                  This is your listing. Travellers and Senders will be able to
+                  accept it from their side.
+                </p>
+                <Button
+                  variant="outline"
+                  className="w-full h-10 text-sm text-destructive hover:bg-destructive/5 hover:text-destructive border-destructive/40"
+                  onClick={handleCancelOpen}
+                  disabled={cancelPending}
+                >
+                  {cancelPending ? "Cancelling..." : "Cancel listing"}
+                </Button>
+              </>
             )}
 
             {/* Party-only actions (Mark Complete, Cancel match). Guests

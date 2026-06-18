@@ -436,6 +436,34 @@ export async function cancelMatchedListingAsync(input: {
   return data ? fromRow(data as ListingRow) : null
 }
 
+// Cancel an OPEN listing the current user posted, before anyone has accepted
+// it. Poster-only: the listings UPDATE RLS policy authorizes the poster via
+// posted_by_id = auth pi_uid, so the authed client suffices, no server route.
+// Transitions open -> expired, consistent with cancelMatchedListingAsync, so
+// the listing leaves the marketplace and falls into Past Trips/Deliveries.
+//
+// Race guard: only acts while status is still open. If someone accepted
+// between sheet render and tap, the row is now matched and this touches 0
+// rows, returning null, so we never yank an accepted (and paid) match.
+export async function cancelOpenListingAsync(input: {
+  listingId: string
+}): Promise<Listing | null> {
+  const { data, error } = await getAuthedClient()
+    .from("listings")
+    .update({ status: "expired" })
+    .eq("id", input.listingId)
+    .eq("status", "open")
+    .select()
+    .single()
+
+  if (error) {
+    console.error("cancelOpenListingAsync error:", error)
+    return null
+  }
+
+  return data ? fromRow(data as ListingRow) : null
+}
+
 // ---- Maintenance ----
 //
 // expireStaleListingsAsync has been removed from this file. Stale listing
