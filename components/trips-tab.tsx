@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { type Listing } from "@/lib/listings"
-import { getListingsByUserAsync } from "@/lib/listings-async"
+import { getListingsByUserAsync, archiveListingAsync } from "@/lib/listings-async"
 import { isGuest, type PiUser, type UserRole } from "@/lib/pi-network"
 import { ListingDetailSheet } from "./listing-detail-sheet"
 
@@ -77,6 +77,22 @@ export function TripsTab({
   // place (home-tab.tsx) without duplicating across tabs.
   const handlePostNav = () => onNavigate("home")
 
+  // Archive an expired Past card. Soft hide: stamps archived_at server-side
+  // (RLS authorizes the poster) and drops it from the local list. The row
+  // stays in the DB so its tracking ID still resolves on the public Track tab.
+  const handleArchive = async (listing: Listing) => {
+    if (listing.status !== "expired") return
+    const ok = window.confirm(
+      "Remove this from My Activity?\n\n" +
+        "It leaves your list but stays lookup-able by its tracking ID.",
+    )
+    if (!ok) return
+    const updated = await archiveListingAsync({ listingId: listing.id })
+    if (!updated) return
+    setMyListings((prev) => prev.filter((l) => l.id !== listing.id))
+    if (selected?.id === listing.id) setSelected(null)
+  }
+
   return (
     <div className="px-4 py-4 space-y-3" data-refresh={refreshKey}>
       <div className="flex items-center justify-between">
@@ -143,12 +159,22 @@ export function TripsTab({
           </div>
 
           {pastListings.map((l) => (
-            <ListingCard
-              key={l.id}
-              listing={l}
-              muted={true}
-              onOpen={() => setSelected(l)}
-            />
+            <div key={l.id} className="space-y-1">
+              <ListingCard
+                listing={l}
+                muted={true}
+                onOpen={() => setSelected(l)}
+              />
+              {l.status === "expired" && (
+                <Button
+                  variant="ghost"
+                  className="w-full h-8 text-xs text-muted-foreground hover:text-destructive"
+                  onClick={() => handleArchive(l)}
+                >
+                  Remove from My Activity
+                </Button>
+              )}
+            </div>
           ))}
         </div>
       )}
