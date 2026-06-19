@@ -110,7 +110,7 @@ export function TrackTab() {
               </p>
               <p className="text-xs text-green-800">
                 Both sender and traveller confirmed this delivery as done.
-                Thanks for moving things across Ghana the smarter way.
+                Thanks for moving things across Gyema the safer way.
               </p>
             </div>
           )}

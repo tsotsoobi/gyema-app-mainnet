@@ -787,7 +787,8 @@ export function ListingDetailSheet({
                   Delivery completed
                 </p>
                 <p className="text-xs text-emerald-800">
-                  Both parties confirmed. Thank you for using Gyema.
+                  Both sender and traveller confirmed this delivery as done.
+                  Thanks for moving things across Gyema the safer way.
                 </p>
               </div>
             )}
