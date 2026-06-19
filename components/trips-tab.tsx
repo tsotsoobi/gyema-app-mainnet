@@ -168,7 +168,7 @@ export function TripsTab({
               {l.status === "expired" && (
                 <Button
                   variant="ghost"
-                  className="w-full h-8 text-xs text-muted-foreground hover:text-destructive"
+                  className="w-full h-8 text-xs text-destructive hover:bg-destructive/5"
                   onClick={() => handleArchive(l)}
                 >
                   Remove from My Activity
