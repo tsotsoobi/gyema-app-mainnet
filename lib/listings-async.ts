@@ -32,6 +32,7 @@ type ListingRow = {
   sender_confirmed: boolean
   traveller_confirmed: boolean
   completed_at: string | null
+  archived_at: string | null
 }
 
 // Convert a Supabase row → app-shaped Listing (camelCase)
@@ -104,6 +105,7 @@ export async function getListingsByUserAsync(userId: string): Promise<Listing[]>
     .from("listings")
     .select("*")
     .or(`posted_by_id.eq.${userId},matched_with_user_id.eq.${userId}`)
+    .is("archived_at", null)
     .order("created_at", { ascending: false })
 
   if (error) {
@@ -458,6 +460,33 @@ export async function cancelOpenListingAsync(input: {
 
   if (error) {
     console.error("cancelOpenListingAsync error:", error)
+    return null
+  }
+
+  return data ? fromRow(data as ListingRow) : null
+}
+
+// Archive an expired listing from My Activity. This is a soft hide, not a
+// delete: it stamps archived_at so getListingsByUserAsync filters the row
+// out of the list, while the row stays in the DB so its tracking ID still
+// resolves on the public Track tab and the history stays available for the
+// future reputation surface.
+//
+// Scoped to expired listings only (the Past-section clutter). The authed
+// client suffices: the listings UPDATE RLS policy authorizes the poster.
+export async function archiveListingAsync(input: {
+  listingId: string
+}): Promise<Listing | null> {
+  const { data, error } = await getAuthedClient()
+    .from("listings")
+    .update({ archived_at: new Date().toISOString() })
+    .eq("id", input.listingId)
+    .eq("status", "expired")
+    .select()
+    .single()
+
+  if (error) {
+    console.error("archiveListingAsync error:", error)
     return null
   }
 
