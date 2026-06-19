@@ -81,13 +81,14 @@ export function TripsTab({
   // (RLS authorizes the poster) and drops it from the local list. The row
   // stays in the DB so its tracking ID still resolves on the public Track tab.
   const handleArchive = async (listing: Listing) => {
-    if (listing.status !== "expired") return
+    if (listing.status !== "expired" && listing.status !== "completed") return
     const ok = window.confirm(
       "Remove this from My Activity?\n\n" +
         "It leaves your list but stays lookup-able by its tracking ID.",
     )
     if (!ok) return
-    const updated = await archiveListingAsync({ listingId: listing.id })
+    const side = listing.postedById === user.uid ? "poster" : "matched"
+    const updated = await archiveListingAsync({ listingId: listing.id, side })
     if (!updated) return
     setMyListings((prev) => prev.filter((l) => l.id !== listing.id))
     if (selected?.id === listing.id) setSelected(null)
@@ -165,7 +166,7 @@ export function TripsTab({
                 muted={true}
                 onOpen={() => setSelected(l)}
               />
-              {l.status === "expired" && (
+              {(l.status === "expired" || l.status === "completed") && (
                 <Button
                   variant="ghost"
                   className="w-full h-8 text-xs text-destructive hover:bg-destructive/5"

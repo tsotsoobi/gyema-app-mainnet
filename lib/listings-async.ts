@@ -33,6 +33,7 @@ type ListingRow = {
   traveller_confirmed: boolean
   completed_at: string | null
   archived_at: string | null
+  archived_by_matched_at: string | null
 }
 
 // Convert a Supabase row → app-shaped Listing (camelCase)
@@ -105,7 +106,6 @@ export async function getListingsByUserAsync(userId: string): Promise<Listing[]>
     .from("listings")
     .select("*")
     .or(`posted_by_id.eq.${userId},matched_with_user_id.eq.${userId}`)
-    .is("archived_at", null)
     .order("created_at", { ascending: false })
 
   if (error) {
@@ -113,7 +113,16 @@ export async function getListingsByUserAsync(userId: string): Promise<Listing[]>
     return []
   }
 
-  return (data as ListingRow[]).map(fromRow)
+  // Per-user archive: hide a listing only from the side that archived it.
+  // Poster archived sets archived_at; matched party archived sets
+  // archived_by_matched_at. The row and Track-by-ID are never affected.
+  const rows = (data as ListingRow[]).filter((r) => {
+    const hiddenForUser =
+      (r.posted_by_id === userId && r.archived_at != null) ||
+      (r.matched_with_user_id === userId && r.archived_by_matched_at != null)
+    return !hiddenForUser
+  })
+  return rows.map(fromRow)
 }
 
 // Public read — anyone with a tracking ID can look up a listing's status.
@@ -472,16 +481,21 @@ export async function cancelOpenListingAsync(input: {
 // resolves on the public Track tab and the history stays available for the
 // future reputation surface.
 //
-// Scoped to expired listings only (the Past-section clutter). The authed
-// client suffices: the listings UPDATE RLS policy authorizes the poster.
+// Scoped to expired and completed listings. Per-user: a poster stamps
+// archived_at, a matched party stamps archived_by_matched_at, so each side
+// hides only its own view. The authed client suffices; the listings UPDATE
+// RLS policy authorizes both the poster and the matched party.
 export async function archiveListingAsync(input: {
   listingId: string
+  side: "poster" | "matched"
 }): Promise<Listing | null> {
+  const column =
+    input.side === "poster" ? "archived_at" : "archived_by_matched_at"
   const { data, error } = await getAuthedClient()
     .from("listings")
-    .update({ archived_at: new Date().toISOString() })
+    .update({ [column]: new Date().toISOString() })
     .eq("id", input.listingId)
-    .eq("status", "expired")
+    .in("status", ["expired", "completed"])
     .select()
     .single()
 
