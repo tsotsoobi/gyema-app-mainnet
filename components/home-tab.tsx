@@ -38,6 +38,7 @@ const GHANA_CITIES = [
   "Bechem", "Yendi", "Sefwi Wiawso", "Bibiani", "Bolgatanga", "Bawku",
   "Wa", "Jirapa", "Dambai", "Jasikan", "Damongo", "Salaga",
   "Nalerigu", "Walewale",
+  "Other",
 ] as const
 
 interface HomeTabProps {
@@ -108,6 +109,8 @@ function TravellerHome({
   const valid =
     fromCity.trim() &&
     toCity.trim() &&
+    fromCity !== "Other" &&
+    toCity !== "Other" &&
     travelDate &&
     capacity &&
     price &&
@@ -339,6 +342,12 @@ function TravellerHome({
               </p>
             </div>
 
+            {(fromCity === "Other" || toCity === "Other") && (
+              <div className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-center text-muted-foreground">
+                Gyema is live in Ghana. Your corridor is coming soon, we are
+                expanding across Africa.
+              </div>
+            )}
             <Button
               className="w-full h-12 text-base font-semibold"
               onClick={handleSubmit}
@@ -423,6 +432,8 @@ function SenderHome({
     size &&
     fromCity.trim() &&
     toCity.trim() &&
+    fromCity !== "Other" &&
+    toCity !== "Other" &&
     deliverBy &&
     offer &&
     whatsapp.trim()
@@ -650,6 +661,12 @@ function SenderHome({
               </p>
             </div>
 
+            {(fromCity === "Other" || toCity === "Other") && (
+              <div className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-center text-muted-foreground">
+                Gyema is live in Ghana. Your corridor is coming soon, we are
+                expanding across Africa.
+              </div>
+            )}
             <Button
               className="w-full h-12 text-base font-semibold"
               onClick={handleSubmit}
