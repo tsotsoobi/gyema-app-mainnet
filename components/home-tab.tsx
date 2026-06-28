@@ -31,7 +31,14 @@ import { GuestPostGate } from "./guest-post-gate"
 // Start with the Accra beachhead; grow as corridors open. Keeping this
 // constrained is what makes local-first board surfacing possible: free
 // text ("accra"/"Accra"/"Acra") would never match a "near me" filter.
-const GHANA_CITIES = ["Accra", "Tema", "Kumasi", "Takoradi", "Cape Coast"] as const
+const GHANA_CITIES = [
+  "Accra", "Tema", "Kasoa", "Kumasi", "Koforidua", "Cape Coast",
+  "Takoradi", "Nkawkaw", "Obuasi", "Tarkwa", "Ho", "Hohoe",
+  "Sunyani", "Techiman", "Tamale", "Berekum", "Kintampo", "Goaso",
+  "Bechem", "Yendi", "Sefwi Wiawso", "Bibiani", "Bolgatanga", "Bawku",
+  "Wa", "Jirapa", "Dambai", "Jasikan", "Damongo", "Salaga",
+  "Nalerigu", "Walewale",
+] as const
 
 interface HomeTabProps {
   role: UserRole
