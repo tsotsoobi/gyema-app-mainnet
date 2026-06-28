@@ -27,6 +27,12 @@ import { isGuest, type PiUser, type UserRole } from "@/lib/pi-network"
 import { ListingDetailSheet } from "./listing-detail-sheet"
 import { GuestPostGate } from "./guest-post-gate"
 
+// Bounded city list for normalized origin/destination matching.
+// Start with the Accra beachhead; grow as corridors open. Keeping this
+// constrained is what makes local-first board surfacing possible: free
+// text ("accra"/"Accra"/"Acra") would never match a "near me" filter.
+const GHANA_CITIES = ["Accra", "Tema", "Kumasi", "Takoradi", "Cape Coast"] as const
+
 interface HomeTabProps {
   role: UserRole
   user: PiUser
@@ -231,21 +237,33 @@ function TravellerHome({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="t-from">From City</Label>
-                <Input
-                  id="t-from"
-                  placeholder="Accra"
-                  value={fromCity}
-                  onChange={(e) => setFromCity(e.target.value)}
-                />
+                <Select value={fromCity} onValueChange={setFromCity}>
+                  <SelectTrigger id="t-from">
+                    <SelectValue placeholder="Select city" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GHANA_CITIES.map((city) => (
+                      <SelectItem key={city} value={city}>
+                        {city}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="t-to">To City</Label>
-                <Input
-                  id="t-to"
-                  placeholder="Kumasi"
-                  value={toCity}
-                  onChange={(e) => setToCity(e.target.value)}
-                />
+                <Select value={toCity} onValueChange={setToCity}>
+                  <SelectTrigger id="t-to">
+                    <SelectValue placeholder="Select city" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GHANA_CITIES.map((city) => (
+                      <SelectItem key={city} value={city}>
+                        {city}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -556,21 +574,33 @@ function SenderHome({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="from">From City</Label>
-                <Input
-                  id="from"
-                  placeholder="Accra"
-                  value={fromCity}
-                  onChange={(e) => setFromCity(e.target.value)}
-                />
+                <Select value={fromCity} onValueChange={setFromCity}>
+                  <SelectTrigger id="from">
+                    <SelectValue placeholder="Select city" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GHANA_CITIES.map((city) => (
+                      <SelectItem key={city} value={city}>
+                        {city}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="to">To City</Label>
-                <Input
-                  id="to"
-                  placeholder="Tamale"
-                  value={toCity}
-                  onChange={(e) => setToCity(e.target.value)}
-                />
+                <Select value={toCity} onValueChange={setToCity}>
+                  <SelectTrigger id="to">
+                    <SelectValue placeholder="Select city" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GHANA_CITIES.map((city) => (
+                      <SelectItem key={city} value={city}>
+                        {city}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
