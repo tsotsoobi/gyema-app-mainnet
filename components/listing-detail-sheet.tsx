@@ -19,6 +19,7 @@ import {
   cancelMatchedListingAsync,
   cancelOpenListingAsync,
   confirmCompletionAsync,
+  markInTransitAsync,
 } from "@/lib/listings-async"
 import { createU2APayment, signInAndPersist, type PiUser } from "@/lib/pi-network"
 
@@ -95,6 +96,7 @@ export function ListingDetailSheet({
 
   const [acceptPending, setAcceptPending] = useState(false)
   const [confirmPending, setConfirmPending] = useState(false)
+  const [transitPending, setTransitPending] = useState(false)
   const [cancelPending, setCancelPending] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
@@ -331,6 +333,29 @@ export function ListingDetailSheet({
     setListing(claimed)
     onListingUpdated?.(claimed)
     setAcceptPending(false)
+  }
+
+  const handleMarkInTransit = async () => {
+    if (role !== "traveller") return
+    setTransitPending(true)
+    setActionError(null)
+    try {
+      const updated = await markInTransitAsync({
+        listingId: listing.id,
+      })
+      if (!updated) {
+        setActionError("Could not mark as picked up. Please try again.")
+        setTransitPending(false)
+        return
+      }
+      setListing(updated)
+      onListingUpdated?.(updated)
+    } catch (err) {
+      console.error("[gyema] handleMarkInTransit error:", err)
+      setActionError("Could not mark as picked up. Please try again.")
+    } finally {
+      setTransitPending(false)
+    }
   }
 
   const handleConfirmCompletion = async () => {
@@ -740,6 +765,15 @@ export function ListingDetailSheet({
               (listing.status === "matched" ||
                 listing.status === "in_transit") && (
                 <>
+                  {role === "traveller" && listing.status === "matched" && (
+                    <Button
+                      className="w-full h-12 text-base font-semibold"
+                      onClick={handleMarkInTransit}
+                      disabled={transitPending}
+                    >
+                      {transitPending ? "Marking..." : "Mark as picked up"}
+                    </Button>
+                  )}
                   <div className="rounded-lg bg-muted/40 p-3 space-y-1">
                     <p className="text-xs font-semibold">Confirmation status</p>
                     <p className="text-xs text-muted-foreground">

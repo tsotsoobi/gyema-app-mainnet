@@ -447,6 +447,30 @@ export async function cancelMatchedListingAsync(input: {
   return data ? fromRow(data as ListingRow) : null
 }
 
+// Traveller marks the delivery as picked up: matched -> in_transit.
+// Traveller-only in practice (the UI gates the action to the carrying party),
+// and race-guarded to status "matched" so it cannot double-fire or fire on the
+// wrong state, mirroring cancelMatchedListingAsync. The row and Track-by-ID
+// reflect the new state immediately.
+export async function markInTransitAsync(input: {
+  listingId: string
+}): Promise<Listing | null> {
+  const { data, error } = await getAuthedClient()
+    .from("listings")
+    .update({ status: "in_transit" })
+    .eq("id", input.listingId)
+    .eq("status", "matched")
+    .select()
+    .single()
+
+  if (error) {
+    console.error("markInTransitAsync error:", error)
+    return null
+  }
+
+  return data ? fromRow(data as ListingRow) : null
+}
+
 // Cancel an OPEN listing the current user posted, before anyone has accepted
 // it. Poster-only: the listings UPDATE RLS policy authorizes the poster via
 // posted_by_id = auth pi_uid, so the authed client suffices, no server route.
