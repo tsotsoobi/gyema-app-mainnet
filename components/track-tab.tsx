@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { type Listing } from "@/lib/listings"
 import { getListingByTrackingIdAsync } from "@/lib/listings-async"
+import { DeliveryTracker } from "./delivery-tracker"
 
 export function TrackTab() {
   const [trackingId, setTrackingId] = useState("")
@@ -78,50 +79,29 @@ export function TrackTab() {
       )}
 
       {result && result !== "not-found" && (
-        <Card className="p-4 space-y-3">
+        <Card className="p-4 space-y-4">
           <div className="flex items-center justify-between">
             <Badge variant="secondary" className="text-xs">
-              {result.kind === "trip" ? "✈️ Trip" : "📦 Package"}
+              {result.kind === "trip" ? "Trip" : "Package"}
             </Badge>
-            <Badge variant="outline" className="text-[10px]">
-              {result.status}
-            </Badge>
-          </div>
-          <div>
-            <p className="font-semibold">
-              {result.fromCity} → {result.toCity}
-            </p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {result.kind === "package"
-                ? result.description
-                : `${result.capacity || "—"}${result.notes ? ` · ${result.notes}` : ""}`}
-            </p>
+            <span className="text-[10px] font-mono text-muted-foreground">
+              {result.trackingId}
+            </span>
           </div>
 
-          {/* V1.1 — celebratory banner for completed deliveries.
-              Renders only when both parties have confirmed completion
-              (status === "completed" + completedAt is set in the DB).
-              Below the route info but above the posted-by metadata
-              so it reads as the headline outcome of the delivery. */}
+          <DeliveryTracker listing={result} />
+
           {result.status === "completed" && (
-            <div className="rounded-md bg-green-50 border border-green-200 p-3 space-y-1">
-              <p className="text-sm font-semibold text-green-900">
-                ✅ Delivery completed!
+            <div className="rounded-md p-3 space-y-1" style={{ backgroundColor: "#15803D14", border: "1px solid #15803D33" }}>
+              <p className="text-sm font-semibold" style={{ color: "#15803D" }}>
+                Delivery completed
               </p>
-              <p className="text-xs text-green-800">
+              <p className="text-xs" style={{ color: "#166534" }}>
                 Both sender and traveller confirmed this delivery as done.
                 Thanks for moving things across Gyema the safer way.
               </p>
             </div>
           )}
-
-          <div className="flex items-center justify-between border-t pt-3">
-            <p className="text-xs text-muted-foreground">Posted by</p>
-            <p className="text-sm font-medium">@{result.postedByUsername}</p>
-          </div>
-          <p className="text-xs text-muted-foreground italic">
-            Live GPS tracking coming in v2.
-          </p>
         </Card>
       )}
     </div>
