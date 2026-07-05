@@ -1,6 +1,7 @@
 "use client"
 
 import { type Listing } from "@/lib/listings"
+import { type GuestJobView } from "@/lib/guest-jobs"
 
 type Stage = {
   label: string
@@ -53,6 +54,40 @@ function deriveStages(l: Listing): Stage[] {
   ]
 }
 
+function deriveGuestStages(j: GuestJobView): Stage[] {
+  const s = j.status
+  const cancelled = s === "cancelled" || s === "expired"
+  const acceptedDone = s === "accepted" || s === "in_transit" || s === "delivered"
+  const delivered = s === "delivered"
+
+  return [
+    {
+      label: "Posted",
+      caption: `Phone-verified sender \u00b7 ${fmtDate(j.createdAt)}`,
+      state: "done",
+    },
+    {
+      label: "Accepted",
+      caption: cancelled
+        ? "Cancelled"
+        : acceptedDone
+          ? `@${j.assignedCourier ?? "courier"} \u00b7 KYC-verified Pioneer is carrying it`
+          : "Waiting for a courier",
+      state: cancelled ? "cancelled" : acceptedDone ? "done" : "current",
+    },
+    {
+      label: "In transit",
+      caption: `On the way to ${j.dropoffArea}`,
+      state: cancelled ? "upcoming" : s === "in_transit" ? "current" : delivered ? "done" : "upcoming",
+    },
+    {
+      label: "Delivered",
+      caption: delivered ? `Signed for in ${j.dropoffArea}` : `Destination: ${j.dropoffArea}`,
+      state: delivered ? "done" : "upcoming",
+    },
+  ]
+}
+
 function nodeColor(state: Stage["state"]): string {
   if (state === "done") return FOREST
   if (state === "current") return GOLD
@@ -60,8 +95,11 @@ function nodeColor(state: Stage["state"]): string {
   return "#D6D3D1"
 }
 
-export function DeliveryTracker({ listing }: { listing: Listing }) {
-  const stages = deriveStages(listing)
+export function DeliveryTracker({ listing }: { listing: Listing | GuestJobView }) {
+  const isGuest = listing.kind === "guest"
+  const stages = isGuest ? deriveGuestStages(listing) : deriveStages(listing)
+  const fromLabel = isGuest ? listing.pickupArea : listing.fromCity
+  const toLabel = isGuest ? listing.dropoffArea : listing.toCity
   const doneCount = stages.filter((st) => st.state === "done").length
   const currentIdx = stages.findIndex((st) => st.state === "current")
   const filled = currentIdx >= 0 ? currentIdx + 0.5 : doneCount
@@ -71,7 +109,7 @@ export function DeliveryTracker({ listing }: { listing: Listing }) {
     <div className="space-y-4">
       <div className="space-y-2">
         <p className="font-semibold text-base">
-          {listing.fromCity} {"\u2192"} {listing.toCity}
+          {fromLabel} {"\u2192"} {toLabel}
         </p>
         <div className="relative h-1.5 w-full rounded-full bg-stone-200">
           <div
@@ -80,8 +118,8 @@ export function DeliveryTracker({ listing }: { listing: Listing }) {
           />
         </div>
         <div className="flex justify-between">
-          <span className="text-[10px] font-mono text-muted-foreground">{listing.fromCity}</span>
-          <span className="text-[10px] font-mono text-muted-foreground">{listing.toCity}</span>
+          <span className="text-[10px] font-mono text-muted-foreground">{fromLabel}</span>
+          <span className="text-[10px] font-mono text-muted-foreground">{toLabel}</span>
         </div>
       </div>
 

@@ -8,18 +8,19 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { type Listing } from "@/lib/listings"
 import { getListingByTrackingIdAsync } from "@/lib/listings-async"
+import { getGuestJobByTrackingIdAsync, type GuestJobView } from "@/lib/guest-jobs"
 import { DeliveryTracker } from "./delivery-tracker"
 
 export function TrackTab() {
   const [trackingId, setTrackingId] = useState("")
-  const [result, setResult] = useState<Listing | null | "not-found">(null)
+  const [result, setResult] = useState<Listing | GuestJobView | null | "not-found">(null)
   const [searching, setSearching] = useState(false)
 
   const handleTrack = async () => {
     if (!trackingId.trim() || searching) return
     setSearching(true)
     try {
-      const found = await getListingByTrackingIdAsync(trackingId)
+      const found = (await getListingByTrackingIdAsync(trackingId)) ?? (await getGuestJobByTrackingIdAsync(trackingId))
       setResult(found ?? "not-found")
     } catch (e) {
       console.error("[gyema] Tracking lookup failed:", e)
@@ -82,7 +83,7 @@ export function TrackTab() {
         <Card className="p-4 space-y-4">
           <div className="flex items-center justify-between">
             <Badge variant="secondary" className="text-xs">
-              {result.kind === "trip" ? "Trip" : "Package"}
+              {result.kind === "trip" ? "Trip" : result.kind === "guest" ? "Guest delivery" : "Package"}
             </Badge>
             <span className="text-[10px] font-mono text-muted-foreground">
               {result.trackingId}
