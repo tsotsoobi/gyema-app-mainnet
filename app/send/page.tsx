@@ -89,10 +89,17 @@ export default function SendPage() {
     return (
       <div className="min-h-screen flex items-center justify-center p-6" style={{ backgroundColor: "#FEF7E6" }}>
         <Card className="p-6 max-w-md text-center space-y-2">
-          <h1 className="text-xl font-bold">Gyema guest sending is coming soon</h1>
+          <h1 className="text-xl font-bold">Gyema guest sending is live</h1>
           <p className="text-sm text-muted-foreground">
-            We are putting the finishing touches on public package sending.
-            Have a tracking ID? You can still follow any delivery on the Track page.
+            Post your delivery on our main app. One tap, no account needed.
+          </p>
+          <a href="https://gyema8841.pinet.com/send" className="block">
+            <Button className="w-full h-11" style={{ backgroundColor: "#15803D" }}>
+              Post your delivery now
+            </Button>
+          </a>
+          <p className="text-xs text-muted-foreground">
+            Have a tracking ID? You can follow any delivery on the Track page.
           </p>
         </Card>
       </div>
