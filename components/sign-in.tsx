@@ -83,14 +83,23 @@ export function SignIn({ onSignedIn, onContinueAsGuest }: SignInProps) {
               {loading ? "Signing in…" : "Sign in with Pi"}
             </Button>
 
-            <Button
-              variant="outline"
-              className="w-full h-12 text-base"
-              size="lg"
+            <a href="/send" className="block">
+              <Button
+                variant="outline"
+                className="w-full h-12 text-base"
+                size="lg"
+              >
+                Post delivery as guest
+              </Button>
+            </a>
+
+            <button
+              type="button"
               onClick={onContinueAsGuest}
+              className="w-full text-center text-xs text-muted-foreground underline"
             >
-              Continue as Guest
-            </Button>
+              Just browsing? Continue as guest
+            </button>
           </div>
 
           <p className="text-xs text-muted-foreground text-center">
