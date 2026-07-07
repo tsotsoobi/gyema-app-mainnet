@@ -37,7 +37,7 @@ export function GuestJobCard({
               {job.pickupArea} {"\u2192"} {job.dropoffArea}
             </p>
             <div className="flex items-center gap-1.5 mt-1">
-              <Badge className="text-[10px]" style={{ backgroundColor: "#15803D" }}>
+              <Badge className="text-[10px] text-amber-950" style={{ backgroundColor: "#F5B800" }}>
                 Guest delivery
               </Badge>
               <Badge variant="secondary" className="text-[10px]">
@@ -122,7 +122,7 @@ export function GuestJobSheet({
         {job && !revealed && (
           <div className="space-y-4 pt-2">
             <div className="flex items-center gap-1.5">
-              <Badge className="text-[10px]" style={{ backgroundColor: "#15803D" }}>
+              <Badge className="text-[10px] text-amber-950" style={{ backgroundColor: "#F5B800" }}>
                 Guest delivery
               </Badge>
               <Badge variant="secondary" className="text-[10px]">
