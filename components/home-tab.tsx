@@ -26,6 +26,8 @@ import {
 import { isGuest, type PiUser, type UserRole } from "@/lib/pi-network"
 import { ListingDetailSheet } from "./listing-detail-sheet"
 import { GuestPostGate } from "./guest-post-gate"
+import { GuestJobCard, GuestJobSheet } from "./guest-job-sheet"
+import { getOpenGuestJobsAsync, type OpenGuestJob } from "@/lib/guest-jobs"
 
 // Bounded city list for normalized origin/destination matching.
 // Start with the Accra beachhead; grow as corridors open. Keeping this
@@ -85,6 +87,18 @@ function TravellerHome({
   const [showForm, setShowForm] = useState(false)
   const [selected, setSelected] = useState<Listing | null>(null)
   const [listings, setListings] = useState<Listing[]>([])
+  const [guestJobs, setGuestJobs] = useState<OpenGuestJob[]>([])
+  const [selectedGuest, setSelectedGuest] = useState<OpenGuestJob | null>(null)
+
+  useEffect(() => {
+    let cancelledG = false
+    getOpenGuestJobsAsync().then((jobs) => {
+      if (!cancelledG) setGuestJobs(jobs)
+    })
+    return () => {
+      cancelledG = true
+    }
+  }, [refreshKey])
   const [fromCity, setFromCity] = useState("")
   const [toCity, setToCity] = useState("")
   const [travelDate, setTravelDate] = useState("")
@@ -184,11 +198,11 @@ function TravellerHome({
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Available Jobs</h2>
         <Badge variant="secondary" className="text-xs">
-          {listings.length} open
+          {listings.length + guestJobs.length} open
         </Badge>
       </div>
 
-      {listings.length === 0 ? (
+      {listings.length + guestJobs.length === 0 ? (
         <Card className="p-8 text-center space-y-2">
           <div className="text-4xl">📭</div>
           <p className="text-sm font-medium">No open jobs right now</p>
@@ -198,6 +212,14 @@ function TravellerHome({
         </Card>
       ) : (
         <div className="space-y-2">
+          {guestJobs.map((g) => (
+            <GuestJobCard key={g.trackingId} job={g} onClick={() => setSelectedGuest(g)} />
+          ))}
+          <GuestJobSheet
+            job={selectedGuest}
+            onClose={() => setSelectedGuest(null)}
+            onAccepted={(t) => setGuestJobs((prev) => prev.filter((j) => j.trackingId !== t))}
+          />
           {listings.map((l) => (
             <button
               key={l.id}

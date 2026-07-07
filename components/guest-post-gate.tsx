@@ -70,6 +70,13 @@ export function GuestPostGate({
         {loading ? "Signing in…" : "Sign in with Pi"}
       </Button>
 
+      {context === "package" && (
+        <a href="/send" className="block">
+          <Button variant="outline" className="w-full h-11">
+            Post delivery as guest
+          </Button>
+        </a>
+      )}
       <p className="text-[11px] text-muted-foreground text-center">
         You can keep browsing as a guest. Sign-in is only required to post.
       </p>
