@@ -3,7 +3,7 @@
 // Tema corridor 55-60 per delivery at incumbent services; within-zone floor ~20-25).
 // Repricing is a one-cell edit here; nothing else in the app knows prices.
 
-export type GuestZone = "A" | "B" | "C" | "D"
+export type GuestZone = "A" | "B" | "C" | "D" | "E"
 
 // Bounded area list for the guest form. Everything else gets the
 // corridor-coming-soon signpost. Keep alphabetized within zones.
@@ -39,6 +39,9 @@ export const GUEST_AREAS: Record<string, GuestZone> = {
   "Sakumono": "D",
   "Tema Community 1-12": "D",
   "Tema Community 13-25": "D",
+  // Zone E: Northwest periphery
+  "Amasaman": "E",
+  "Kutunse": "E",
 }
 
 export const GUEST_AREA_NAMES = Object.keys(GUEST_AREAS)
@@ -56,6 +59,11 @@ const ZONE_MATRIX: Record<string, number> = {
   CC: 25,
   CD: 60,
   DD: 25,
+  AE: 50,
+  BE: 55,
+  CE: 40,
+  DE: 70,
+  EE: 35,
 }
 
 export function quoteCedis(pickupArea: string, dropoffArea: string): number | null {

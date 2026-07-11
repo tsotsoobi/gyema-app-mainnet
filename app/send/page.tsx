@@ -87,7 +87,7 @@ export default function SendPage() {
   }
 
   const waLink = `https://wa.me/${GYEMA_WHATSAPP}?text=${encodeURIComponent(
-    `Verify ${trackingId}`
+    offList ? `Quote ${trackingId}: ${pickupArea} to ${dropoffArea}` : `Verify ${trackingId}`
   )}`
 
   if (!GUEST_SEND_ENABLED) {
@@ -320,7 +320,7 @@ export default function SendPage() {
               <p className="text-xs text-muted-foreground">
                 Tap the button below and send us the WhatsApp message from the
                 phone number you entered. Your delivery goes to a courier once
-                we match the number.
+                we match the number.{offList && " New corridors are priced by hand, so we will message your quote on WhatsApp first."}
               </p>
             </div>
             <a href={waLink} target="_blank" rel="noopener noreferrer">
