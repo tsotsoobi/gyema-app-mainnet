@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
       senderPhone,
       whenPref, scheduledDate,
       paymentType,
+      offList,
     } = body ?? {}
 
     // Required-field validation
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, reason: "bad_request" }, { status: 400 })
     }
     // Bounded city list (same normalized set as the app)
-    if (!(pickupArea in GUEST_AREAS) || !(dropoffArea in GUEST_AREAS)) {
+    if (!offList && (!(pickupArea in GUEST_AREAS) || !(dropoffArea in GUEST_AREAS))) {
       return NextResponse.json({ ok: false, reason: "unbounded_city" }, { status: 400 })
     }
     if (!["small", "medium", "large"].includes(packageSize)) {
@@ -94,8 +95,8 @@ export async function POST(request: NextRequest) {
         when_pref: whenPref ?? null,
         scheduled_date: scheduledDate ?? null,
         payment_type: paymentType ?? null,
-        quote_cedis: computeQuoteCedis(pickupArea, dropoffArea),
-        status: "posted",
+        quote_cedis: offList ? null : computeQuoteCedis(pickupArea, dropoffArea),
+        status: offList ? "pending_quote" : "posted",
       })
       .select()
       .single()

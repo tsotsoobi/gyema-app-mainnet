@@ -37,12 +37,16 @@ export default function SendPage() {
   const [submitting, setSubmitting] = useState(false)
   const [trackingId, setTrackingId] = useState("")
   const [errorMsg, setErrorMsg] = useState("")
+  const [offList, setOffList] = useState(false)
 
-  const quote =
-    pickupArea && dropoffArea ? quoteCedis(pickupArea, dropoffArea) : null
+  const quote = offList
+    ? null
+    : pickupArea && dropoffArea
+      ? quoteCedis(pickupArea, dropoffArea)
+      : null
 
   const formComplete =
-    pickupArea && dropoffArea && packageSize && recipientName && recipientPhone
+    pickupArea.trim() && dropoffArea.trim() && packageSize && recipientName && recipientPhone
 
   const handleSubmit = async () => {
     if (submitting || !senderPhone.trim()) return
@@ -65,6 +69,7 @@ export default function SendPage() {
           whenPref,
           scheduledDate: whenPref === "date" ? scheduledDate || null : null,
           paymentType,
+          offList,
         }),
       })
       const body = await res.json()
@@ -123,41 +128,58 @@ export default function SendPage() {
       <div className="px-4 py-4 space-y-3 max-w-md mx-auto">
         {step === "form" && (
           <Card className="p-4 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="g-from">Pickup area</Label>
-                <Select value={pickupArea} onValueChange={setPickupArea}>
-                  <SelectTrigger id="g-from">
-                    <SelectValue placeholder="Select area" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {GUEST_AREA_NAMES.map((area) => (
-                      <SelectItem key={area} value={area}>
-                        {area}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            {!offList ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="g-from">Pickup area</Label>
+                  <Select value={pickupArea} onValueChange={setPickupArea}>
+                    <SelectTrigger id="g-from">
+                      <SelectValue placeholder="Select area" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GUEST_AREA_NAMES.map((area) => (
+                        <SelectItem key={area} value={area}>
+                          {area}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="g-to">Drop-off area</Label>
+                  <Select value={dropoffArea} onValueChange={setDropoffArea}>
+                    <SelectTrigger id="g-to">
+                      <SelectValue placeholder="Select area" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GUEST_AREA_NAMES.map((area) => (
+                        <SelectItem key={area} value={area}>
+                          {area}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="g-to">Drop-off area</Label>
-                <Select value={dropoffArea} onValueChange={setDropoffArea}>
-                  <SelectTrigger id="g-to">
-                    <SelectValue placeholder="Select area" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {GUEST_AREA_NAMES.map((area) => (
-                      <SelectItem key={area} value={area}>
-                        {area}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="g-from-t">Pickup area</Label>
+                  <Input id="g-from-t" placeholder="e.g. Ashongman" value={pickupArea} onChange={(e) => setPickupArea(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="g-to-t">Drop-off area</Label>
+                  <Input id="g-to-t" placeholder="e.g. Amasaman" value={dropoffArea} onChange={(e) => setDropoffArea(e.target.value)} />
+                </div>
               </div>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Not on the list? More corridors are coming soon.
-            </p>
+            )}
+            <button
+              type="button"
+              onClick={() => { setOffList(!offList); setPickupArea(""); setDropoffArea("") }}
+              className="text-xs text-muted-foreground underline text-left"
+            >
+              {offList ? "Back to the area list" : "Not on the list? Tell us your area"}
+            </button>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -240,6 +262,10 @@ export default function SendPage() {
                 <p className="text-3xl font-bold" style={{ color: "#15803D" }}>
                   {quote} GHS
                 </p>
+              ) : offList ? (
+                <p className="text-sm font-semibold" style={{ color: "#1E1B4B" }}>
+                  New corridor. We will price this route and message you the quote on WhatsApp.
+                </p>
               ) : (
                 <p className="text-sm" style={{ color: "#DC2626" }}>
                   We could not price this route. Pick areas from the list.
@@ -276,7 +302,7 @@ export default function SendPage() {
               <p className="text-sm" style={{ color: "#DC2626" }}>{errorMsg}</p>
             )}
 
-            <Button className="w-full h-11" disabled={quote === null || !senderPhone.trim() || submitting} onClick={handleSubmit}>
+            <Button className="w-full h-11" disabled={(!offList && quote === null) || !senderPhone.trim() || submitting} onClick={handleSubmit}>
               {submitting ? "Creating..." : "Confirm and verify my number"}
             </Button>
             <Button variant="ghost" className="w-full h-8 text-xs" onClick={() => setStep("form")}>
