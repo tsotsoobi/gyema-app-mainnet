@@ -2,9 +2,9 @@
 
 **Peer-to-peer delivery on Pi Network, built in Ghana for the world.**
 
-Gyema connects two sides of every delivery: **Senders** with packages to move, and **Travellers** already making the trip. Pi is the payment rail. The platform runs on Pi Testnet today and is built to migrate to Mainnet once Pi Core Team enables Soroban deployment for third-party apps.
+Gyema connects two sides of every delivery: **Senders** with packages to move, and **Travellers** already making the trip. Pi is the payment rail. This is the Mainnet app, live on Pi Mainnet and served in Pi Browser via gyema8841.pinet.com. The Testnet repo ([tsotsoobi/gyema-app](https://github.com/tsotsoobi/gyema-app)) is the identical-code staging mirror.
 
-- Production: [gyema-app.vercel.app](https://gyema-app.vercel.app)
+- Production: [gyema-app-mainnet.vercel.app](https://gyema-app-mainnet.vercel.app), in Pi Browser at gyema8841.pinet.com
 - V2 escrow contracts: [tsotsoobi/gyema-contracts](https://github.com/tsotsoobi/gyema-contracts)
 - Company: [Pi Logistics Ltd.](https://pillgh.com)
 
@@ -80,7 +80,7 @@ Design highlights (full source at [gyema-contracts](https://github.com/tsotsoobi
 - **Self-deal blocked** at contract level
 - 762 lines of Rust, 12 passing tests, full CI green
 
-V2 deployment work begins after the gyema.pi domain claim (December 19, 2026) and once Pi Core Team enables Soroban deployment for third-party apps.
+The v2 escrow contract is deployed and fully proven on Pi Testnet. Mainnet deployment waits on the Pi Core Team opening Soroban to third-party apps. The gyema.pi domain claim is submitted and pending (deadline December 19, 2026).
 
 ---
 
@@ -141,9 +141,8 @@ Mainnet vs. Testnet is controlled in the Pi Developer Portal app configuration; 
 
 ## Status
 
-- **Network:** Pi Testnet (Protocol 23)
-- **Current rating:** 4.8★ across 227 raters (as of May 24, 2026)
-- **First completed delivery:** GYM-719D42, Accra → Tema, 2026-05-07
+- **Network:** Pi Mainnet (Protocol 26)
+- **First completed delivery:** GYM-2A2DB5, Nungua to Ridge, July 2026 ([public tracker](https://gyema8841.pinet.com/track/GYM-2A2DB5))
 
 ---
 
