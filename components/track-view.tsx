@@ -108,7 +108,7 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
 
             <DeliveryTracker listing={result} />
 
-            {result.status === "completed" && (
+            {(result.status === "completed" || result.status === "delivered") && (
               <div className="rounded-md p-3 space-y-1" style={{ backgroundColor: "#15803D14", border: "1px solid #15803D33" }}>
                 <p className="text-sm font-semibold" style={{ color: "#15803D" }}>Delivery completed</p>
                 <p className="text-xs" style={{ color: "#166534" }}>
