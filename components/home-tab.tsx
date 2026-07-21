@@ -325,6 +325,16 @@ function TravellerHome({
               </Select>
             </div>
 
+            {(() => {
+              const r = quoteCedisRangeForCities(fromCity, toCity)
+              if (!r) return null
+              return (
+                <p className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-muted-foreground">
+                  Typical dispatch rate on this corridor: {r.min === r.max ? r.min : `${r.min} to ${r.max}`} GHS.
+                  Benchmark only, you set your Pi price.
+                </p>
+              )
+            })()}
             <div className="space-y-1.5">
               <Label htmlFor="t-price">Your Price (π Pi)</Label>
               <Input
@@ -338,16 +348,6 @@ function TravellerHome({
                 onChange={(e) => setPrice(e.target.value)}
               />
             </div>
-            {(() => {
-              const r = quoteCedisRangeForCities(fromCity, toCity)
-              if (!r) return null
-              return (
-                <p className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-muted-foreground">
-                  Typical dispatch rate on this corridor: {r.min === r.max ? r.min : `${r.min} to ${r.max}`} GHS.
-                  Benchmark only, you set your Pi price.
-                </p>
-              )
-            })()}
 
             <div className="space-y-1.5">
               <Label htmlFor="t-notes">Notes (optional)</Label>
@@ -665,6 +665,16 @@ function SenderHome({
               />
             </div>
 
+            {(() => {
+              const r = quoteCedisRangeForCities(fromCity, toCity)
+              if (!r) return null
+              return (
+                <p className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-muted-foreground">
+                  Typical dispatch rate on this corridor: {r.min === r.max ? r.min : `${r.min} to ${r.max}`} GHS.
+                  Benchmark only, you set your Pi price.
+                </p>
+              )
+            })()}
             <div className="space-y-1.5">
               <Label htmlFor="offer">Your Offer (π Pi)</Label>
               <Input
@@ -678,16 +688,6 @@ function SenderHome({
                 onChange={(e) => setOffer(e.target.value)}
               />
             </div>
-            {(() => {
-              const r = quoteCedisRangeForCities(fromCity, toCity)
-              if (!r) return null
-              return (
-                <p className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-muted-foreground">
-                  Typical dispatch rate on this corridor: {r.min === r.max ? r.min : `${r.min} to ${r.max}`} GHS.
-                  Benchmark only, you set your Pi price.
-                </p>
-              )
-            })()}
 
             <div className="space-y-1.5">
               <Label htmlFor="s-whatsapp">WhatsApp Number</Label>
