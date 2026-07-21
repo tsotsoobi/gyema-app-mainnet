@@ -73,3 +73,34 @@ export function quoteCedis(pickupArea: string, dropoffArea: string): number | nu
   const key = [from, to].sort().join("")
   return ZONE_MATRIX[key] ?? null
 }
+
+// Pioneer-rail advisory benchmark. Maps the coarse GHANA_CITIES vocabulary
+// onto zone SETS and returns the min to max GHS spread across the zone
+// cross-product. "Accra" spans zones A to C; "Tema" is the D corridor.
+// Cities outside the Greater Accra zone system return null: never guess
+// a price. Advisory only; Pioneer settlement stays in Pi.
+const CITY_ZONE_SETS: Record<string, GuestZone[]> = {
+  Accra: ["A", "B", "C"],
+  Tema: ["D"],
+}
+
+export function quoteCedisRangeForCities(
+  fromCity: string,
+  toCity: string,
+): { min: number; max: number } | null {
+  const fromZones = CITY_ZONE_SETS[fromCity]
+  const toZones = CITY_ZONE_SETS[toCity]
+  if (!fromZones || !toZones) return null
+  let min = Number.POSITIVE_INFINITY
+  let max = Number.NEGATIVE_INFINITY
+  for (const a of fromZones) {
+    for (const b of toZones) {
+      const v = ZONE_MATRIX[[a, b].sort().join("")]
+      if (v === undefined) continue
+      if (v < min) min = v
+      if (v > max) max = v
+    }
+  }
+  if (!Number.isFinite(min)) return null
+  return { min, max }
+}

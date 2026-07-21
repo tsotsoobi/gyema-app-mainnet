@@ -28,6 +28,7 @@ import { ListingDetailSheet } from "./listing-detail-sheet"
 import { GuestPostGate } from "./guest-post-gate"
 import { GuestJobCard, GuestJobSheet } from "./guest-job-sheet"
 import { getOpenGuestJobsAsync, type OpenGuestJob } from "@/lib/guest-jobs"
+import { quoteCedisRangeForCities } from "@/lib/guest-pricing"
 
 // Bounded city list for normalized origin/destination matching.
 // Start with the Accra beachhead; grow as corridors open. Keeping this
@@ -337,6 +338,16 @@ function TravellerHome({
                 onChange={(e) => setPrice(e.target.value)}
               />
             </div>
+            {(() => {
+              const r = quoteCedisRangeForCities(fromCity, toCity)
+              if (!r) return null
+              return (
+                <p className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-muted-foreground">
+                  Typical dispatch rate on this corridor: {r.min === r.max ? r.min : `${r.min} to ${r.max}`} GHS.
+                  Benchmark only, you set your Pi price.
+                </p>
+              )
+            })()}
 
             <div className="space-y-1.5">
               <Label htmlFor="t-notes">Notes (optional)</Label>
@@ -667,6 +678,16 @@ function SenderHome({
                 onChange={(e) => setOffer(e.target.value)}
               />
             </div>
+            {(() => {
+              const r = quoteCedisRangeForCities(fromCity, toCity)
+              if (!r) return null
+              return (
+                <p className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-muted-foreground">
+                  Typical dispatch rate on this corridor: {r.min === r.max ? r.min : `${r.min} to ${r.max}`} GHS.
+                  Benchmark only, you set your Pi price.
+                </p>
+              )
+            })()}
 
             <div className="space-y-1.5">
               <Label htmlFor="s-whatsapp">WhatsApp Number</Label>
