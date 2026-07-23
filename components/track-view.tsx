@@ -49,9 +49,11 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#FEF7E6" }}>
-      <div className="p-4" style={{ background: "linear-gradient(90deg, #1E1B4B, #15803D)" }}>
-        <h1 className="text-2xl font-bold text-white">Gyema</h1>
-        <p className="text-sm text-white/90 mt-1">Track your delivery live.</p>
+      <div className="p-4 md:py-8" style={{ background: "linear-gradient(90deg, #1E1B4B, #15803D)" }}>
+        <div className="max-w-md md:max-w-2xl mx-auto">
+          <h1 className="text-2xl md:text-3xl font-bold text-white">Gyema</h1>
+          <p className="text-sm md:text-base text-white/90 mt-1">Track your delivery live.</p>
+        </div>
       </div>
       <div className="h-1.5 flex">
         <div className="flex-1" style={{ backgroundColor: "#DC2626" }} />
@@ -60,7 +62,7 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
         <div className="flex-1" style={{ backgroundColor: "#F5B800" }} />
       </div>
 
-      <div className="px-4 py-4 space-y-3 max-w-md mx-auto">
+      <div className="px-4 py-4 md:py-8 space-y-3 max-w-md md:max-w-2xl mx-auto">
         <Card className="p-4 space-y-3">
           <div className="text-center space-y-1">
             <div className="text-4xl">{"\uD83D\uDCCD"}</div>
