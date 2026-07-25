@@ -19,6 +19,7 @@ export type GuestJobView = {
   status: GuestJobStatus
   createdAt: string
   assignedCourier: string | null
+  pickupConfirmedAt: string | null
 }
 
 export async function getGuestJobByTrackingIdAsync(

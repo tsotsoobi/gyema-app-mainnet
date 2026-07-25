@@ -18,11 +18,19 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
   const [trackingId, setTrackingId] = useState(initialId.toUpperCase())
   const [result, setResult] = useState<Listing | GuestJobView | null | "not-found">(null)
   const [searching, setSearching] = useState(false)
+  const [confirmLast4, setConfirmLast4] = useState("")
+  const [confirming, setConfirming] = useState(false)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
+  const [confirmedAtLocal, setConfirmedAtLocal] = useState<string | null>(null)
 
   const runLookup = useCallback(async (rawId: string) => {
     const id = rawId.trim()
     if (!id) return
     setSearching(true)
+    setConfirmLast4("")
+    setConfirming(false)
+    setConfirmError(null)
+    setConfirmedAtLocal(null)
     try {
       const found =
         (await getListingByTrackingIdAsync(id)) ??
@@ -110,6 +118,78 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
 
             <DeliveryTracker listing={result} />
 
+            {result.kind === "guest" && (() => {
+              const confirmedAt = confirmedAtLocal ?? result.pickupConfirmedAt
+              const waHref = "https://wa.me/233500005780?text=" + encodeURIComponent(
+                "Start tracking " + result.trackingId + ". To start live tracking, share this pickup location with us: tap the clip icon, choose Location, then Send your current location. This confirms your courier has collected the package and switches your tracker to live."
+              )
+              if (confirmedAt) {
+                return (
+                  <div className="rounded-md p-3 space-y-2" style={{ backgroundColor: "#F5B80022", border: "1px solid #F5B80066" }}>
+                    <p className="text-sm font-semibold">Pickup confirmed</p>
+                    <p className="text-xs text-muted-foreground">
+                      Now share your pickup location on WhatsApp so we can switch your tracker to live.
+                    </p>
+                    <Button asChild className="w-full">
+                      <a href={waHref} target="_blank" rel="noopener noreferrer">Share pickup location on WhatsApp</a>
+                    </Button>
+                  </div>
+                )
+              }
+              if (result.status !== "accepted") return null
+              return (
+                <div className="rounded-md p-3 space-y-2" style={{ backgroundColor: "#F5B80022", border: "1px solid #F5B80066" }}>
+                  <p className="text-sm font-semibold">Courier collected your package?</p>
+                  <p className="text-xs text-muted-foreground">
+                    Confirm pickup with the last 4 digits of the phone you posted with, so only you can confirm this delivery.
+                  </p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="confirm-last4">Last 4 digits</Label>
+                    <Input
+                      id="confirm-last4"
+                      inputMode="numeric"
+                      maxLength={4}
+                      value={confirmLast4}
+                      onChange={(e) => setConfirmLast4(e.target.value.replace(/[^0-9]/g, ""))}
+                      placeholder="1234"
+                    />
+                  </div>
+                  {confirmError && <p className="text-xs" style={{ color: "#DC2626" }}>{confirmError}</p>}
+                  <Button
+                    className="w-full"
+                    disabled={confirming || confirmLast4.length !== 4}
+                    onClick={async () => {
+                      setConfirming(true)
+                      setConfirmError(null)
+                      try {
+                        const res = await fetch("/api/guest/confirm-pickup", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ trackingId: result.trackingId, last4: confirmLast4 }),
+                        })
+                        const body = await res.json()
+                        if (body.ok) {
+                          setConfirmedAtLocal(body.confirmedAt ?? new Date().toISOString())
+                        } else if (body.reason === "guard_failed") {
+                          setConfirmError("Those digits do not match the phone this delivery was posted with.")
+                        } else if (body.reason === "not_confirmable" || body.reason === "state_changed") {
+                          setConfirmError("This delivery cannot be confirmed right now. Refreshing status.")
+                          void runLookup(result.trackingId)
+                        } else {
+                          setConfirmError("Could not confirm. Please try again.")
+                        }
+                      } catch {
+                        setConfirmError("Network problem. Please try again.")
+                      } finally {
+                        setConfirming(false)
+                      }
+                    }}
+                  >
+                    {confirming ? "Confirming..." : "Confirm pickup"}
+                  </Button>
+                </div>
+              )
+            })()}
             {(result.status === "completed" || result.status === "delivered") && (
               <div className="rounded-md p-3 space-y-1" style={{ backgroundColor: "#15803D14", border: "1px solid #15803D33" }}>
                 <p className="text-sm font-semibold" style={{ color: "#15803D" }}>Delivery completed</p>
