@@ -28,21 +28,15 @@ import { ListingDetailSheet } from "./listing-detail-sheet"
 import { GuestPostGate } from "./guest-post-gate"
 import { GuestJobCard, GuestJobSheet } from "./guest-job-sheet"
 import { getOpenGuestJobsAsync, type OpenGuestJob } from "@/lib/guest-jobs"
-import { quoteCedisRangeForCities } from "@/lib/guest-pricing"
+import { GUEST_AREA_NAMES, quoteCedis, quoteCedisRangeForCities } from "@/lib/guest-pricing"
 
-// Bounded city list for normalized origin/destination matching.
-// Start with the Accra beachhead; grow as corridors open. Keeping this
-// constrained is what makes local-first board surfacing possible: free
-// text ("accra"/"Accra"/"Acra") would never match a "near me" filter.
-const GHANA_CITIES = [
-  "Accra", "Tema", "Kasoa", "Kumasi", "Koforidua", "Cape Coast",
-  "Takoradi", "Nkawkaw", "Obuasi", "Tarkwa", "Ho", "Hohoe",
-  "Sunyani", "Techiman", "Tamale", "Berekum", "Kintampo", "Goaso",
-  "Bechem", "Yendi", "Sefwi Wiawso", "Bibiani", "Bolgatanga", "Bawku",
-  "Wa", "Jirapa", "Dambai", "Jasikan", "Damongo", "Salaga",
-  "Nalerigu", "Walewale",
-  "Other",
-] as const
+// Bounded AREA list for normalized origin/destination matching (v1:
+// Greater Accra areas, mirroring the guest /send vocabulary so both rails
+// speak the same corridors and the benchmark can quote exact cells).
+// Inter-city corridors return in v2; until then "Other" is the escape
+// hatch, same as guest off-list. Source of truth: GUEST_AREAS in
+// lib/guest-pricing.ts.
+const TRIP_AREAS = [...GUEST_AREA_NAMES, "Other"]
 
 interface HomeTabProps {
   role: UserRole
@@ -269,13 +263,13 @@ function TravellerHome({
           <Card className="p-4 space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="t-from">From City</Label>
+                <Label htmlFor="t-from">From Area</Label>
                 <Select value={fromCity} onValueChange={setFromCity}>
                   <SelectTrigger id="t-from">
                     <SelectValue placeholder="Select city" />
                   </SelectTrigger>
                   <SelectContent>
-                    {GHANA_CITIES.map((city) => (
+                    {TRIP_AREAS.map((city) => (
                       <SelectItem key={city} value={city}>
                         {city}
                       </SelectItem>
@@ -284,13 +278,13 @@ function TravellerHome({
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="t-to">To City</Label>
+                <Label htmlFor="t-to">To Area</Label>
                 <Select value={toCity} onValueChange={setToCity}>
                   <SelectTrigger id="t-to">
                     <SelectValue placeholder="Select city" />
                   </SelectTrigger>
                   <SelectContent>
-                    {GHANA_CITIES.map((city) => (
+                    {TRIP_AREAS.map((city) => (
                       <SelectItem key={city} value={city}>
                         {city}
                       </SelectItem>
@@ -326,7 +320,8 @@ function TravellerHome({
             </div>
 
             {(() => {
-              const r = quoteCedisRangeForCities(fromCity, toCity)
+              const exact = quoteCedis(fromCity, toCity)
+              const r = exact !== null ? { min: exact, max: exact } : quoteCedisRangeForCities(fromCity, toCity)
               if (!r) return null
               return (
                 <p className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-muted-foreground">
@@ -624,13 +619,13 @@ function SenderHome({
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="from">From City</Label>
+                <Label htmlFor="from">From Area</Label>
                 <Select value={fromCity} onValueChange={setFromCity}>
                   <SelectTrigger id="from">
                     <SelectValue placeholder="Select city" />
                   </SelectTrigger>
                   <SelectContent>
-                    {GHANA_CITIES.map((city) => (
+                    {TRIP_AREAS.map((city) => (
                       <SelectItem key={city} value={city}>
                         {city}
                       </SelectItem>
@@ -639,13 +634,13 @@ function SenderHome({
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="to">To City</Label>
+                <Label htmlFor="to">To Area</Label>
                 <Select value={toCity} onValueChange={setToCity}>
                   <SelectTrigger id="to">
                     <SelectValue placeholder="Select city" />
                   </SelectTrigger>
                   <SelectContent>
-                    {GHANA_CITIES.map((city) => (
+                    {TRIP_AREAS.map((city) => (
                       <SelectItem key={city} value={city}>
                         {city}
                       </SelectItem>
@@ -666,7 +661,8 @@ function SenderHome({
             </div>
 
             {(() => {
-              const r = quoteCedisRangeForCities(fromCity, toCity)
+              const exact = quoteCedis(fromCity, toCity)
+              const r = exact !== null ? { min: exact, max: exact } : quoteCedisRangeForCities(fromCity, toCity)
               if (!r) return null
               return (
                 <p className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-muted-foreground">
