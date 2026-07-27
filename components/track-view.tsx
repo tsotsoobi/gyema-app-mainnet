@@ -22,6 +22,10 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
   const [confirming, setConfirming] = useState(false)
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [confirmedAtLocal, setConfirmedAtLocal] = useState<string | null>(null)
+  const [deliveryLast4, setDeliveryLast4] = useState("")
+  const [deliveryConfirming, setDeliveryConfirming] = useState(false)
+  const [deliveryError, setDeliveryError] = useState<string | null>(null)
+  const [deliveryConfirmedAtLocal, setDeliveryConfirmedAtLocal] = useState<string | null>(null)
 
   const runLookup = useCallback(async (rawId: string) => {
     const id = rawId.trim()
@@ -31,6 +35,10 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
     setConfirming(false)
     setConfirmError(null)
     setConfirmedAtLocal(null)
+    setDeliveryLast4("")
+    setDeliveryConfirming(false)
+    setDeliveryError(null)
+    setDeliveryConfirmedAtLocal(null)
     try {
       const found =
         (await getListingByTrackingIdAsync(id)) ??
@@ -186,6 +194,72 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
                     }}
                   >
                     {confirming ? "Confirming..." : "Confirm pickup"}
+                  </Button>
+                </div>
+              )
+            })()}
+            {result.kind === "guest" && (() => {
+              const deliveredAt = deliveryConfirmedAtLocal ?? result.deliveryConfirmedAt
+              if (deliveredAt) {
+                return (
+                  <div className="rounded-md p-3 space-y-1" style={{ backgroundColor: "#15803D14", border: "1px solid #15803D33" }}>
+                    <p className="text-sm font-semibold" style={{ color: "#15803D" }}>Delivery confirmed</p>
+                    <p className="text-xs" style={{ color: "#166534" }}>
+                      You signed off on this delivery. Thanks for moving things across Gyema the safer way.
+                    </p>
+                  </div>
+                )
+              }
+              if (result.status !== "in_transit") return null
+              return (
+                <div className="rounded-md p-3 space-y-2" style={{ backgroundColor: "#F5B80022", border: "1px solid #F5B80066" }}>
+                  <p className="text-sm font-semibold">Package arrived?</p>
+                  <p className="text-xs text-muted-foreground">
+                    Confirm delivery with the last 4 digits of the phone you posted with. This closes the delivery.
+                  </p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="delivery-last4">Last 4 digits</Label>
+                    <Input
+                      id="delivery-last4"
+                      inputMode="numeric"
+                      maxLength={4}
+                      value={deliveryLast4}
+                      onChange={(e) => setDeliveryLast4(e.target.value.replace(/[^0-9]/g, ""))}
+                      placeholder="1234"
+                    />
+                  </div>
+                  {deliveryError && <p className="text-xs" style={{ color: "#DC2626" }}>{deliveryError}</p>}
+                  <Button
+                    className="w-full"
+                    disabled={deliveryConfirming || deliveryLast4.length !== 4}
+                    onClick={async () => {
+                      setDeliveryConfirming(true)
+                      setDeliveryError(null)
+                      try {
+                        const res = await fetch("/api/guest/confirm-delivery", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ trackingId: result.trackingId, last4: deliveryLast4 }),
+                        })
+                        const body = await res.json()
+                        if (body.ok) {
+                          setDeliveryConfirmedAtLocal(body.confirmedAt ?? new Date().toISOString())
+                        } else if (body.reason === "guard_failed") {
+                          setDeliveryError("Those digits do not match the phone this delivery was posted with.")
+                        } else if (body.reason === "not_confirmable" || body.reason === "state_changed") {
+                          setDeliveryError("This delivery cannot be confirmed right now. Refreshing status.")
+                          void runLookup(result.trackingId)
+                        } else {
+                          setDeliveryError("Could not confirm. Please try again.")
+                        }
+                      } catch {
+                        setDeliveryError("Network problem. Please try again.")
+                      } finally {
+                        setDeliveryConfirming(false)
+                      }
+                    }}
+                  >
+                    {deliveryConfirming ? "Confirming..." : "Confirm delivery"}
                   </Button>
                 </div>
               )

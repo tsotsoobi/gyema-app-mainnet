@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   const admin = createAdminClient()
   const { data, error } = await admin
     .from("guest_jobs")
-    .select("tracking_id, pickup_area, dropoff_area, status, created_at, assigned_courier, pickup_confirmed_at")
+    .select("tracking_id, pickup_area, dropoff_area, status, created_at, assigned_courier, pickup_confirmed_at, delivery_confirmed_at")
     .eq("tracking_id", trackingId)
     .eq("phone_verified", true)
     .maybeSingle()
@@ -47,6 +47,7 @@ export async function GET(req: NextRequest) {
       createdAt: data.created_at,
       assignedCourier: data.assigned_courier,
       pickupConfirmedAt: data.pickup_confirmed_at,
+      deliveryConfirmedAt: data.delivery_confirmed_at,
     },
   })
 }
