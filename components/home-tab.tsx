@@ -96,6 +96,8 @@ function TravellerHome({
   }, [refreshKey])
   const [fromCity, setFromCity] = useState("")
   const [toCity, setToCity] = useState("")
+  const [fromOther, setFromOther] = useState("")
+  const [toOther, setToOther] = useState("")
   const [travelDate, setTravelDate] = useState("")
   const [capacity, setCapacity] = useState<PackageSize | "">("")
   const [price, setPrice] = useState("")
@@ -118,8 +120,8 @@ function TravellerHome({
   const valid =
     fromCity.trim() &&
     toCity.trim() &&
-    fromCity !== "Other" &&
-    toCity !== "Other" &&
+    (fromCity !== "Other" || fromOther.trim()) &&
+    (toCity !== "Other" || toOther.trim()) &&
     travelDate &&
     capacity &&
     price &&
@@ -130,8 +132,8 @@ function TravellerHome({
     setSubmitting(true)
     try {
       const listing = await createTripAsync({
-        fromCity: fromCity.trim(),
-        toCity: toCity.trim(),
+        fromCity: (fromCity === "Other" ? fromOther.trim() : fromCity.trim()),
+        toCity: (toCity === "Other" ? toOther.trim() : toCity.trim()),
         travelDate,
         capacity: capacity as PackageSize,
         pricePi: parseFloat(price),
@@ -147,6 +149,8 @@ function TravellerHome({
       setSubmitted(listing.trackingId)
       setFromCity("")
       setToCity("")
+      setFromOther("")
+      setToOther("")
       setTravelDate("")
       setCapacity("")
       setPrice("")
@@ -266,7 +270,7 @@ function TravellerHome({
                 <Label htmlFor="t-from">From Area</Label>
                 <Select value={fromCity} onValueChange={setFromCity}>
                   <SelectTrigger id="t-from">
-                    <SelectValue placeholder="Select city" />
+                    <SelectValue placeholder="Select area" />
                   </SelectTrigger>
                   <SelectContent>
                     {TRIP_AREAS.map((city) => (
@@ -281,7 +285,7 @@ function TravellerHome({
                 <Label htmlFor="t-to">To Area</Label>
                 <Select value={toCity} onValueChange={setToCity}>
                   <SelectTrigger id="t-to">
-                    <SelectValue placeholder="Select city" />
+                    <SelectValue placeholder="Select area" />
                   </SelectTrigger>
                   <SelectContent>
                     {TRIP_AREAS.map((city) => (
@@ -294,6 +298,31 @@ function TravellerHome({
               </div>
             </div>
 
+            {(fromCity === "Other" || toCity === "Other") && (
+              <div className="grid grid-cols-2 gap-3">
+                {fromCity === "Other" && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="from-other-area">From area (type it)</Label>
+                    <Input id="from-other-area" value={fromOther} onChange={(e) => setFromOther(e.target.value)} placeholder="e.g. Aburi" />
+                  </div>
+                )}
+                {toCity === "Other" && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="to-other-area">To area (type it)</Label>
+                    <Input id="to-other-area" value={toOther} onChange={(e) => setToOther(e.target.value)} placeholder="e.g. Aburi" />
+                  </div>
+                )}
+              </div>
+            )}
+            {(fromCity === "Other" || toCity === "Other") && (
+              <div className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-center text-muted-foreground">
+                New corridor? Post it now, then{" "}
+                <a className="underline font-semibold" target="_blank" rel="noopener noreferrer" href={"https://wa.me/233500005780?text=" + encodeURIComponent("Corridor request: " + (fromCity === "Other" ? fromOther : fromCity) + " to " + (toCity === "Other" ? toOther : toCity))}>
+                  tell us on WhatsApp
+                </a>{" "}
+                so we can price it and open it for everyone.
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="t-date">Travel Date</Label>
               <Input
@@ -370,12 +399,6 @@ function TravellerHome({
               </p>
             </div>
 
-            {(fromCity === "Other" || toCity === "Other") && (
-              <div className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-center text-muted-foreground">
-                Gyema is live in Ghana. Your corridor is coming soon, we are
-                expanding across Africa.
-              </div>
-            )}
             <Button
               className="w-full h-12 text-base font-semibold"
               onClick={handleSubmit}
@@ -437,6 +460,8 @@ function SenderHome({
   const [size, setSize] = useState<PackageSize | "">("")
   const [fromCity, setFromCity] = useState("")
   const [toCity, setToCity] = useState("")
+  const [fromOther, setFromOther] = useState("")
+  const [toOther, setToOther] = useState("")
   const [deliverBy, setDeliverBy] = useState("")
   const [offer, setOffer] = useState("")
   const [whatsapp, setWhatsapp] = useState("")
@@ -460,8 +485,8 @@ function SenderHome({
     size &&
     fromCity.trim() &&
     toCity.trim() &&
-    fromCity !== "Other" &&
-    toCity !== "Other" &&
+    (fromCity !== "Other" || fromOther.trim()) &&
+    (toCity !== "Other" || toOther.trim()) &&
     deliverBy &&
     offer &&
     whatsapp.trim()
@@ -473,8 +498,8 @@ function SenderHome({
       const listing = await createPackageAsync({
         description: description.trim(),
         size: size as PackageSize,
-        fromCity: fromCity.trim(),
-        toCity: toCity.trim(),
+        fromCity: (fromCity === "Other" ? fromOther.trim() : fromCity.trim()),
+        toCity: (toCity === "Other" ? toOther.trim() : toCity.trim()),
         deliverBy,
         offerPi: parseFloat(offer),
         postedById: user.uid,
@@ -490,6 +515,8 @@ function SenderHome({
       setSize("")
       setFromCity("")
       setToCity("")
+      setFromOther("")
+      setToOther("")
       setDeliverBy("")
       setOffer("")
       setWhatsapp("")
@@ -622,7 +649,7 @@ function SenderHome({
                 <Label htmlFor="from">From Area</Label>
                 <Select value={fromCity} onValueChange={setFromCity}>
                   <SelectTrigger id="from">
-                    <SelectValue placeholder="Select city" />
+                    <SelectValue placeholder="Select area" />
                   </SelectTrigger>
                   <SelectContent>
                     {TRIP_AREAS.map((city) => (
@@ -637,7 +664,7 @@ function SenderHome({
                 <Label htmlFor="to">To Area</Label>
                 <Select value={toCity} onValueChange={setToCity}>
                   <SelectTrigger id="to">
-                    <SelectValue placeholder="Select city" />
+                    <SelectValue placeholder="Select area" />
                   </SelectTrigger>
                   <SelectContent>
                     {TRIP_AREAS.map((city) => (
@@ -650,6 +677,31 @@ function SenderHome({
               </div>
             </div>
 
+            {(fromCity === "Other" || toCity === "Other") && (
+              <div className="grid grid-cols-2 gap-3">
+                {fromCity === "Other" && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="from-other-area">From area (type it)</Label>
+                    <Input id="from-other-area" value={fromOther} onChange={(e) => setFromOther(e.target.value)} placeholder="e.g. Aburi" />
+                  </div>
+                )}
+                {toCity === "Other" && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="to-other-area">To area (type it)</Label>
+                    <Input id="to-other-area" value={toOther} onChange={(e) => setToOther(e.target.value)} placeholder="e.g. Aburi" />
+                  </div>
+                )}
+              </div>
+            )}
+            {(fromCity === "Other" || toCity === "Other") && (
+              <div className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-center text-muted-foreground">
+                New corridor? Post it now, then{" "}
+                <a className="underline font-semibold" target="_blank" rel="noopener noreferrer" href={"https://wa.me/233500005780?text=" + encodeURIComponent("Corridor request: " + (fromCity === "Other" ? fromOther : fromCity) + " to " + (toCity === "Other" ? toOther : toCity))}>
+                  tell us on WhatsApp
+                </a>{" "}
+                so we can price it and open it for everyone.
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="deadline">Deadline</Label>
               <Input
@@ -700,12 +752,6 @@ function SenderHome({
               </p>
             </div>
 
-            {(fromCity === "Other" || toCity === "Other") && (
-              <div className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-center text-muted-foreground">
-                Gyema is live in Ghana. Your corridor is coming soon, we are
-                expanding across Africa.
-              </div>
-            )}
             <Button
               className="w-full h-12 text-base font-semibold"
               onClick={handleSubmit}
