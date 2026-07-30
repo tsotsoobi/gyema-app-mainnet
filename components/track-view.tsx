@@ -128,19 +128,14 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
 
             {result.kind === "guest" && (() => {
               const confirmedAt = confirmedAtLocal ?? result.pickupConfirmedAt
-              const waHref = "https://wa.me/233500005780?text=" + encodeURIComponent(
-                "Start tracking " + result.trackingId + ". To start live tracking, share this pickup location with us: tap the clip icon, choose Location, then Send your current location. This confirms your courier has collected the package and switches your tracker to live."
-              )
               if (confirmedAt) {
+                if (result.status === "delivered" || result.status === "completed") return null
                 return (
-                  <div className="rounded-md p-3 space-y-2" style={{ backgroundColor: "#F5B80022", border: "1px solid #F5B80066" }}>
-                    <p className="text-sm font-semibold">Pickup confirmed</p>
-                    <p className="text-xs text-muted-foreground">
-                      Now share your pickup location on WhatsApp so we can switch your tracker to live.
+                  <div className="rounded-md p-3 space-y-1" style={{ backgroundColor: "#15803D14", border: "1px solid #15803D33" }}>
+                    <p className="text-sm font-semibold" style={{ color: "#15803D" }}>Pickup confirmed</p>
+                    <p className="text-xs" style={{ color: "#166534" }}>
+                      You confirmed the courier collected this package.
                     </p>
-                    <Button asChild className="w-full">
-                      <a href={waHref} target="_blank" rel="noopener noreferrer">Share pickup location on WhatsApp</a>
-                    </Button>
                   </div>
                 )
               }
@@ -201,6 +196,7 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
             {result.kind === "guest" && (() => {
               const deliveredAt = deliveryConfirmedAtLocal ?? result.deliveryConfirmedAt
               if (deliveredAt) {
+                if (result.status === "delivered" || result.status === "completed") return null
                 return (
                   <div className="rounded-md p-3 space-y-1" style={{ backgroundColor: "#15803D14", border: "1px solid #15803D33" }}>
                     <p className="text-sm font-semibold" style={{ color: "#15803D" }}>Delivery confirmed</p>
@@ -268,7 +264,9 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
               <div className="rounded-md p-3 space-y-1" style={{ backgroundColor: "#15803D14", border: "1px solid #15803D33" }}>
                 <p className="text-sm font-semibold" style={{ color: "#15803D" }}>Delivery completed</p>
                 <p className="text-xs" style={{ color: "#166534" }}>
-                  Both sender and traveller confirmed this delivery as done. Thanks for moving things across Gyema the safer way.
+                  {result.kind === "guest"
+                    ? "You confirmed pickup and delivery. Thanks for moving things across Gyema the safer way."
+                    : "Both sender and traveller confirmed this delivery as done. Thanks for moving things across Gyema the safer way."}
                 </p>
               </div>
             )}
