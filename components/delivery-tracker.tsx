@@ -71,7 +71,9 @@ function deriveGuestStages(j: GuestJobView): Stage[] {
       caption: cancelled
         ? "Cancelled"
         : acceptedDone
-          ? `@${j.assignedCourier ?? "courier"} \u00b7 KYC-verified Pioneer is carrying it`
+          ? j.assignedCourier
+            ? `@${j.assignedCourier} \u00b7 Pi Pioneer is carrying it`
+            : "A Pi Pioneer is carrying it"
           : "Waiting for a courier",
       state: cancelled ? "cancelled" : acceptedDone ? "done" : "current",
     },
