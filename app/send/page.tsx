@@ -116,7 +116,7 @@ export default function SendPage() {
         <div className="max-w-md md:max-w-2xl mx-auto">
           <h1 className="text-2xl md:text-3xl font-bold text-white">Gyema</h1>
           <p className="text-sm md:text-base text-white/90 mt-1">
-            Send packages across Accra today. Your courier is identity-verified.
+            Send packages across Accra today. Your courier is a verified Pi Pioneer.
           </p>
         </div>
       </div>
@@ -274,7 +274,7 @@ export default function SendPage() {
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                Paid on delivery. A KYC-verified Pioneer courier handles your package.
+                Paid on delivery. A verified Pi Pioneer courier handles your package.
               </p>
             </div>
 
@@ -332,7 +332,7 @@ export default function SendPage() {
             </a>
             <p className="text-xs text-muted-foreground">
               Save your tracking ID. Anyone with it can follow the delivery live
-              on the Track page. A KYC-verified Pioneer courier will handle your
+              on the Track page. A verified Pi Pioneer courier will handle your
               package.
             </p>
           </Card>
