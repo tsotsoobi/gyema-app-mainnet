@@ -137,8 +137,8 @@ export function GuestJobSheet({
             </p>
             <p className="text-xs text-muted-foreground">
               You keep the full amount, {job.paymentType === "momo" ? "MoMo" : "cash"} on
-              delivery. No Pi fee. Sender contact and landmarks are revealed once
-              you accept.
+              delivery. No Pi fee. Landmarks and recipient contact are revealed
+              once you accept.
             </p>
             <div className="space-y-1.5">
               <Label htmlFor="gj-wa">Your WhatsApp number</Label>
@@ -171,7 +171,6 @@ export function GuestJobSheet({
               You have this delivery. Contact details:
             </p>
             <div className="rounded-md border p-3 space-y-1 text-sm">
-              <p><span className="text-muted-foreground">Sender:</span> {revealed.senderPhone}</p>
               <p><span className="text-muted-foreground">Pickup:</span> {revealed.pickupArea}{revealed.pickupLandmark ? `, ${revealed.pickupLandmark}` : ""}</p>
               <p><span className="text-muted-foreground">Recipient:</span> {revealed.recipientName ?? "-"} {revealed.recipientPhone ? `(${revealed.recipientPhone})` : ""}</p>
               <p><span className="text-muted-foreground">Drop-off:</span> {revealed.dropoffArea}{revealed.dropoffLandmark ? `, ${revealed.dropoffLandmark}` : ""}</p>
