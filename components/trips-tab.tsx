@@ -7,7 +7,9 @@ import { Badge } from "@/components/ui/badge"
 import { type Listing } from "@/lib/listings"
 import { getListingsByUserAsync, archiveListingAsync } from "@/lib/listings-async"
 import { isGuest, type PiUser, type UserRole } from "@/lib/pi-network"
+import { getMyGuestJobsAsync, type CourierGuestJob } from "@/lib/guest-jobs"
 import { ListingDetailSheet } from "./listing-detail-sheet"
+import { GuestCourierCard } from "./guest-courier-card"
 
 interface TripsTabProps {
   user: PiUser
@@ -32,6 +34,7 @@ export function TripsTab({
 }: TripsTabProps) {
   const [myListings, setMyListings] = useState<Listing[]>([])
   const [selected, setSelected] = useState<Listing | null>(null)
+  const [guestJobs, setGuestJobs] = useState<CourierGuestJob[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -44,6 +47,25 @@ export function TripsTab({
     getListingsByUserAsync(user.uid).then((all) => {
       if (cancelled) return
       setMyListings(all)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [user.uid, refreshKey])
+
+  // Guest jobs this user has accepted as a courier. Separate fetch from
+  // listings: guest_jobs is a different rail with its own server-read route,
+  // and courier identity is resolved there from the session token, so nothing
+  // about the user is passed in here. Guests have no session and get [].
+  useEffect(() => {
+    let cancelled = false
+    if (isGuest(user)) {
+      setGuestJobs([])
+      return
+    }
+    getMyGuestJobsAsync().then((jobs) => {
+      if (cancelled) return
+      setGuestJobs(jobs)
     })
     return () => {
       cancelled = true
@@ -114,6 +136,26 @@ export function TripsTab({
       >
         {role === "traveller" ? "✈️ Register a Trip" : "📦 Post a Delivery"}
       </Button>
+
+      {/* Guest deliveries — accepted cedis-rail jobs, rendered as their own
+          section ABOVE Active. A guest job has no poster, so the courier is
+          always the traveller: this is gated on role alone, never on the
+          postedById logic that groups listings. */}
+      {role === "traveller" && guestJobs.length > 0 && (
+        <div className="space-y-2 pt-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Guest Deliveries
+            </h3>
+            <span className="text-[11px] text-muted-foreground">
+              {guestJobs.length}
+            </span>
+          </div>
+          {guestJobs.map((j) => (
+            <GuestCourierCard key={j.trackingId} job={j} />
+          ))}
+        </div>
+      )}
 
       {/* Active section */}
       <div className="space-y-2 pt-2">
