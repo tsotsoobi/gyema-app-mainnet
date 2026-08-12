@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next"
 import Script from "next/script"
 import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
+import { TestnetBanner } from "@/components/testnet-banner"
 import "./globals.css"
 
 export const metadata: Metadata = {
@@ -76,6 +77,7 @@ html {
             }
           `}
         </Script>
+        <TestnetBanner />
         {children}
       </body>
     </html>

@@ -63,15 +63,15 @@ export type AcceptedGuestJob = {
   dropoffLandmark: string | null
   recipientName: string | null
   recipientPhone: string | null
-  senderPhone: string
   quoteCedis: number | null
   paymentType: string | null
 }
 
 // A guest job as its assigned courier sees it, for the persistent My Activity
-// surface. Distinct from AcceptedGuestJob, which is the one-shot accept-sheet
-// reveal: this shape carries NO senderPhone, because /api/guest/mine never
-// selects that column.
+// surface. Carries NO senderPhone, because /api/guest/mine never selects that
+// column. Neither does the accept-sheet reveal: no courier-facing shape holds
+// the sender's phone, since the public tracker guards both sender
+// confirmations with its last four digits.
 export type CourierGuestJob = {
   kind: "guest"
   trackingId: string
@@ -162,7 +162,6 @@ export async function acceptGuestJobAsync(input: {
       dropoffLandmark: j.dropoff_landmark,
       recipientName: j.recipient_name,
       recipientPhone: j.recipient_phone,
-      senderPhone: j.sender_phone,
       quoteCedis: j.quote_cedis,
       paymentType: j.payment_type,
     }
