@@ -68,6 +68,55 @@ export type AcceptedGuestJob = {
   paymentType: string | null
 }
 
+// A guest job as its assigned courier sees it, for the persistent My Activity
+// surface. Distinct from AcceptedGuestJob, which is the one-shot accept-sheet
+// reveal: this shape carries NO senderPhone, because /api/guest/mine never
+// selects that column.
+export type CourierGuestJob = {
+  kind: "guest"
+  trackingId: string
+  pickupArea: string
+  pickupLandmark: string | null
+  dropoffArea: string
+  dropoffLandmark: string | null
+  packageSize: string
+  recipientName: string | null
+  recipientPhone: string | null
+  quoteCedis: number | null
+  paymentType: string | null
+  whenPref: string | null
+  scheduledDate: string | null
+  status: GuestJobStatus
+  pickupConfirmedAt: string | null
+  pickupConfirmedBy: string | null
+  deliveryConfirmedAt: string | null
+  deliveryConfirmedBy: string | null
+}
+
+// Jobs assigned to the signed-in courier. Identity is never sent: the route
+// derives it from the session token server-side and matches assigned_courier
+// against the verified pi_username. Guests have no session and so get [].
+export async function getMyGuestJobsAsync(): Promise<CourierGuestJob[]> {
+  const session = getSupabaseSession()
+  if (!session?.accessToken) return []
+  try {
+    const res = await fetch("/api/guest/mine", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessToken: session.accessToken }),
+    })
+    if (!res.ok) {
+      console.error("[gyema] getMyGuestJobsAsync failed:", res.status)
+      return []
+    }
+    const body = await res.json()
+    return body?.ok ? (body.jobs as CourierGuestJob[]) : []
+  } catch (e) {
+    console.error("[gyema] getMyGuestJobsAsync error:", e)
+    return []
+  }
+}
+
 export async function getOpenGuestJobsAsync(): Promise<OpenGuestJob[]> {
   try {
     const res = await fetch("/api/guest/open")
