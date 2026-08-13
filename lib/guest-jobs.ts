@@ -1,4 +1,5 @@
 import { getSupabaseSession } from "./pi-network"
+import { STAMP_COURIER_CODE } from "./delivery-stamps"
 // Client-side lookup for guest jobs, via the sanitized server read route.
 // The guest rail has no anon Supabase surface by design; this fetch wrapper
 // is the only way client code reads a guest job.
@@ -21,6 +22,12 @@ export type GuestJobView = {
   assignedCourier: string | null
   pickupConfirmedAt: string | null
   deliveryConfirmedAt: string | null
+  // Which sides have signed off delivery, and whether this job carries a
+  // one-time delivery code at all. Never the hash: /api/guest/track emits
+  // nullity only. Optional on the type because a cached older payload will
+  // not carry them.
+  deliveryConfirmedBy?: string | null
+  hasDeliveryCode?: boolean
 }
 
 export async function getGuestJobByTrackingIdAsync(
@@ -42,6 +49,36 @@ export async function getGuestJobByTrackingIdAsync(
     return null
   }
 }
+// Sender-side reveal of the one-time delivery code, guarded by the same last
+// 4 digits as the confirm routes. Reading it stamps nothing.
+export type DeliveryCodeReveal =
+  | { ok: true; code: string }
+  | { ok: false; reason: string }
+
+export async function revealDeliveryCodeAsync(input: {
+  trackingId: string
+  last4: string
+}): Promise<DeliveryCodeReveal> {
+  try {
+    const res = await fetch("/api/guest/delivery-code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        trackingId: input.trackingId.trim().toUpperCase(),
+        last4: input.last4,
+      }),
+    })
+    const body = await res.json()
+    if (body?.ok && typeof body.code === "string") {
+      return { ok: true, code: body.code }
+    }
+    return { ok: false, reason: typeof body?.reason === "string" ? body.reason : "failed" }
+  } catch (e) {
+    console.error("[gyema] revealDeliveryCodeAsync error:", e)
+    return { ok: false, reason: "network" }
+  }
+}
+
 export type OpenGuestJob = {
   kind: "guest"
   trackingId: string
@@ -91,6 +128,10 @@ export type CourierGuestJob = {
   pickupConfirmedBy: string | null
   deliveryConfirmedAt: string | null
   deliveryConfirmedBy: string | null
+  // Whether this job has a one-time delivery code, so the card knows to ask
+  // for one. Nullity only, never the hash: a courier holding the hash of a
+  // 4-digit code holds the code.
+  hasDeliveryCode: boolean
 }
 
 // Jobs assigned to the signed-in courier. Identity is never sent: the route
@@ -114,6 +155,46 @@ export async function getMyGuestJobsAsync(): Promise<CourierGuestJob[]> {
   } catch (e) {
     console.error("[gyema] getMyGuestJobsAsync error:", e)
     return []
+  }
+}
+
+// The courier entering the delivery code the recipient read out at the door.
+// The one write the courier card makes. Identity travels as the session token
+// and is resolved server-side against assigned_courier, exactly as /mine does:
+// the route will not spend this job's attempt budget for anyone else.
+export type DeliveryCodeSubmit =
+  | { ok: true; delivered: boolean }
+  | { ok: false; reason: string; attemptsLeft?: number }
+
+export async function submitDeliveryCodeAsync(input: {
+  trackingId: string
+  code: string
+}): Promise<DeliveryCodeSubmit> {
+  const session = getSupabaseSession()
+  if (!session?.accessToken) {
+    return { ok: false, reason: "unauthorized" }
+  }
+  try {
+    const res = await fetch("/api/guest/confirm-delivery", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        trackingId: input.trackingId,
+        via: STAMP_COURIER_CODE,
+        code: input.code,
+        accessToken: session.accessToken,
+      }),
+    })
+    const body = await res.json()
+    if (body?.ok) return { ok: true, delivered: body.delivered === true }
+    return {
+      ok: false,
+      reason: typeof body?.reason === "string" ? body.reason : "failed",
+      attemptsLeft: typeof body?.attemptsLeft === "number" ? body.attemptsLeft : undefined,
+    }
+  } catch (e) {
+    console.error("[gyema] submitDeliveryCodeAsync error:", e)
+    return { ok: false, reason: "network" }
   }
 }
 
