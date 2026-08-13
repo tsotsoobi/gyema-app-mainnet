@@ -7,6 +7,12 @@ export const runtime = "nodejs"
 // RLS-on with no public policy, so this route is the single sanctioned
 // read path. Returns a sanitized payload only. Never expose recipient_phone,
 // sender_phone, recipient_name, landmarks, or quote_cedis here.
+//
+// delivery_code_hash is selected but NEVER emitted: this payload is
+// anonymous, and over a 4-digit space the hash is the code. Only its nullity
+// leaves, as hasDeliveryCode, so the tracker knows whether a code exists to
+// reveal. The plaintext lives behind the last-4 guard on
+// /api/guest/delivery-code and nowhere else.
 // Unverified drafts (phone_verified = false) never resolve publicly:
 // tracking IDs are only issued after OTP, so an unverified row is an
 // abandoned draft that should stay invisible and age out via TTL.
@@ -23,7 +29,7 @@ export async function GET(req: NextRequest) {
   const admin = createAdminClient()
   const { data, error } = await admin
     .from("guest_jobs")
-    .select("tracking_id, pickup_area, dropoff_area, status, created_at, assigned_courier, pickup_confirmed_at, delivery_confirmed_at")
+    .select("tracking_id, pickup_area, dropoff_area, status, created_at, assigned_courier, pickup_confirmed_at, delivery_confirmed_at, delivery_confirmed_by, delivery_code_hash")
     .eq("tracking_id", trackingId)
     .eq("phone_verified", true)
     .maybeSingle()
@@ -48,6 +54,12 @@ export async function GET(req: NextRequest) {
       assignedCourier: data.assigned_courier,
       pickupConfirmedAt: data.pickup_confirmed_at,
       deliveryConfirmedAt: data.delivery_confirmed_at,
+      // Which sides have signed off. On a coded job delivery_confirmed_at
+      // alone no longer means "the sender confirmed": the courier may have
+      // stamped first, and the tracker must not read that as the sender's
+      // own sign-off and withdraw their confirm button.
+      deliveryConfirmedBy: data.delivery_confirmed_by,
+      hasDeliveryCode: data.delivery_code_hash !== null,
     },
   })
 }

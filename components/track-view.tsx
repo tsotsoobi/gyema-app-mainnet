@@ -8,7 +8,12 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { type Listing } from "@/lib/listings"
 import { getListingByTrackingIdAsync } from "@/lib/listings-async"
-import { getGuestJobByTrackingIdAsync, type GuestJobView } from "@/lib/guest-jobs"
+import {
+  getGuestJobByTrackingIdAsync,
+  revealDeliveryCodeAsync,
+  type GuestJobView,
+} from "@/lib/guest-jobs"
+import { hasStamp, STAMP_SENDER, STAMP_COURIER_CODE } from "@/lib/delivery-stamps"
 import { DeliveryTracker } from "@/components/delivery-tracker"
 
 // Shared tracker UI for both /track (search + ?id=) and /track/[id] (path).
@@ -26,6 +31,12 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
   const [deliveryConfirming, setDeliveryConfirming] = useState(false)
   const [deliveryError, setDeliveryError] = useState<string | null>(null)
   const [deliveryConfirmedAtLocal, setDeliveryConfirmedAtLocal] = useState<string | null>(null)
+  // Delivery-code reveal. Authenticates the sender without confirming
+  // anything: revealing stamps nothing and moves no status.
+  const [revealLast4, setRevealLast4] = useState("")
+  const [revealing, setRevealing] = useState(false)
+  const [revealError, setRevealError] = useState<string | null>(null)
+  const [revealedCode, setRevealedCode] = useState<string | null>(null)
 
   const runLookup = useCallback(async (rawId: string) => {
     const id = rawId.trim()
@@ -39,6 +50,10 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
     setDeliveryConfirming(false)
     setDeliveryError(null)
     setDeliveryConfirmedAtLocal(null)
+    setRevealLast4("")
+    setRevealing(false)
+    setRevealError(null)
+    setRevealedCode(null)
     try {
       const found =
         (await getListingByTrackingIdAsync(id)) ??
@@ -193,15 +208,97 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
                 </div>
               )
             })()}
+            {/* Delivery code reveal. Deliberately NOT styled like the amber
+                confirm cards above and below it: this one asks the sender to
+                authenticate but changes nothing, and it should not read as a
+                third thing to sign off. */}
+            {result.kind === "guest" && result.hasDeliveryCode &&
+              result.status !== "delivered" &&
+              result.status !== "cancelled" &&
+              result.status !== "expired" && (
+              <div className="rounded-md p-3 space-y-2" style={{ backgroundColor: "#1E1B4B0F", border: "1px solid #1E1B4B33" }}>
+                <p className="text-sm font-semibold" style={{ color: "#1E1B4B" }}>Delivery code</p>
+                {revealedCode ? (
+                  <>
+                    <p className="font-mono text-3xl font-bold tracking-[0.3em] text-center py-1" style={{ color: "#1E1B4B" }}>
+                      {revealedCode}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Give this code to whoever is receiving the package. The
+                      courier will ask for it at handover, and can only close
+                      this delivery once they have been told it in person.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      This delivery has a one-time code the recipient will need
+                      at handover. Show it with the last 4 digits of the phone
+                      you posted with. Nothing is confirmed by looking.
+                    </p>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="reveal-last4">Last 4 digits</Label>
+                      <Input
+                        id="reveal-last4"
+                        inputMode="numeric"
+                        maxLength={4}
+                        value={revealLast4}
+                        onChange={(e) => setRevealLast4(e.target.value.replace(/[^0-9]/g, ""))}
+                        placeholder="1234"
+                      />
+                    </div>
+                    {revealError && <p className="text-xs" style={{ color: "#DC2626" }}>{revealError}</p>}
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      disabled={revealing || revealLast4.length !== 4}
+                      onClick={async () => {
+                        setRevealing(true)
+                        setRevealError(null)
+                        const res = await revealDeliveryCodeAsync({
+                          trackingId: result.trackingId,
+                          last4: revealLast4,
+                        })
+                        setRevealing(false)
+                        if (res.ok) {
+                          setRevealedCode(res.code)
+                        } else if (res.reason === "guard_failed") {
+                          setRevealError("Those digits do not match the phone this delivery was posted with.")
+                        } else if (res.reason === "no_code") {
+                          setRevealError("This delivery does not have a code yet. It is created when a courier accepts.")
+                        } else if (res.reason === "network") {
+                          setRevealError("Network problem. Please try again.")
+                        } else {
+                          setRevealError("Could not show the code. Please try again.")
+                        }
+                      }}
+                    >
+                      {revealing ? "Checking..." : "Show delivery code"}
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
             {result.kind === "guest" && (() => {
-              const deliveredAt = deliveryConfirmedAtLocal ?? result.deliveryConfirmedAt
-              if (deliveredAt) {
+              // On a coded job the courier may stamp first, so a non-null
+              // delivery_confirmed_at no longer means the SENDER signed off.
+              // Reading it that way would withdraw this form from a sender who
+              // has not confirmed anything yet.
+              const senderConfirmed = deliveryConfirmedAtLocal
+                ? true
+                : result.hasDeliveryCode
+                  ? hasStamp(result.deliveryConfirmedBy, STAMP_SENDER)
+                  : !!result.deliveryConfirmedAt
+              const courierConfirmed = hasStamp(result.deliveryConfirmedBy, STAMP_COURIER_CODE)
+              if (senderConfirmed) {
                 if (result.status === "delivered" || result.status === "completed") return null
                 return (
                   <div className="rounded-md p-3 space-y-1" style={{ backgroundColor: "#15803D14", border: "1px solid #15803D33" }}>
                     <p className="text-sm font-semibold" style={{ color: "#15803D" }}>Delivery confirmed</p>
                     <p className="text-xs" style={{ color: "#166534" }}>
-                      You signed off on this delivery. Thanks for moving things across Gyema the safer way.
+                      {result.hasDeliveryCode && !courierConfirmed
+                        ? "You signed off on this delivery. It closes once the courier enters the delivery code at handover."
+                        : "You signed off on this delivery. Thanks for moving things across Gyema the safer way."}
                     </p>
                   </div>
                 )
@@ -211,7 +308,11 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
                 <div className="rounded-md p-3 space-y-2" style={{ backgroundColor: "#F5B80022", border: "1px solid #F5B80066" }}>
                   <p className="text-sm font-semibold">Package arrived?</p>
                   <p className="text-xs text-muted-foreground">
-                    Confirm delivery with the last 4 digits of the phone you posted with. This closes the delivery.
+                    {result.hasDeliveryCode
+                      ? courierConfirmed
+                        ? "The courier entered your delivery code at handover. Confirm with the last 4 digits of the phone you posted with to close this delivery."
+                        : "Confirm delivery with the last 4 digits of the phone you posted with. This delivery also closes on the courier entering your delivery code."
+                      : "Confirm delivery with the last 4 digits of the phone you posted with. This closes the delivery."}
                   </p>
                   <div className="space-y-1.5">
                     <Label htmlFor="delivery-last4">Last 4 digits</Label>
@@ -235,7 +336,13 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
                         const res = await fetch("/api/guest/confirm-delivery", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ trackingId: result.trackingId, last4: deliveryLast4 }),
+                          // The discriminator is explicit and always sent. The
+                          // route has no default: an absent via is a 400.
+                          body: JSON.stringify({
+                            trackingId: result.trackingId,
+                            via: STAMP_SENDER,
+                            last4: deliveryLast4,
+                          }),
                         })
                         const body = await res.json()
                         if (body.ok) {
@@ -265,7 +372,9 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
                 <p className="text-sm font-semibold" style={{ color: "#15803D" }}>Delivery completed</p>
                 <p className="text-xs" style={{ color: "#166534" }}>
                   {result.kind === "guest"
-                    ? "You confirmed pickup and delivery. Thanks for moving things across Gyema the safer way."
+                    ? result.hasDeliveryCode
+                      ? "You confirmed this delivery and the courier entered your delivery code at handover. Thanks for moving things across Gyema the safer way."
+                      : "You confirmed pickup and delivery. Thanks for moving things across Gyema the safer way."
                     : "Both sender and traveller confirmed this delivery as done. Thanks for moving things across Gyema the safer way."}
                 </p>
               </div>

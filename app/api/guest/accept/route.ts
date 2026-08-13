@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
+import { mintDeliveryCode, hashDeliveryCode } from "@/lib/delivery-code"
 
 // Server-side guest job claim, mirroring /api/listings/accept. Verify the
 // accepter from their Supabase session token, never a client-supplied uid,
 // then claim atomically, guarded to verified, posted, unassigned rows.
 // No Pi fee fires here: a guest job is a dispatch job, not a connection.
 // Contact fields reveal ONLY in the response to the successful accepter.
+//
+// The claim also mints the one-time delivery code. It rides the same atomic
+// update as the claim itself, so a job is never assigned without a code and
+// a code is never minted for a job the courier failed to win.
 export const runtime = "nodejs"
 
 // Explicit column list, same convention as /api/guest/mine. NEVER select()
@@ -17,6 +22,9 @@ export const runtime = "nodejs"
 // the public tracker guards both sender confirmations with its last four
 // digits, so a courier holding it could confirm pickup and delivery on a job
 // they never carried.
+//
+// delivery_code_hash is not one of them either, and must never be added: the
+// code space is 4 digits, so the hash IS the code to anyone holding it.
 const ACCEPTED_JOB_COLUMNS = [
   "tracking_id",
   "pickup_area",
@@ -47,12 +55,14 @@ export async function POST(request: NextRequest) {
     if (!meta.pi_uid || !meta.pi_username) {
       return NextResponse.json({ ok: false, reason: "no_identity" }, { status: 401 })
     }
+    const deliveryCode = mintDeliveryCode()
     const { data, error } = await admin
       .from("guest_jobs")
       .update({
         status: "accepted",
         assigned_courier: meta.pi_username,
         assigned_courier_whatsapp: accepterWhatsapp ?? null,
+        delivery_code_hash: hashDeliveryCode(deliveryCode),
         updated_at: new Date().toISOString(),
       })
       .eq("tracking_id", trackingId)
@@ -65,7 +75,12 @@ export async function POST(request: NextRequest) {
       if (error) console.error("[gyema] guest accept update error:", error)
       return NextResponse.json({ ok: false, reason: "not_open" })
     }
-    return NextResponse.json({ ok: true, job: data })
+    // The plaintext leaves the server exactly once, here, and is never
+    // readable again: only its hash was stored. The client mapper in
+    // lib/guest-jobs.ts deliberately drops it rather than surfacing it in the
+    // accept sheet, since the accepter is the courier and a code the courier
+    // already knows proves nothing about where they are standing.
+    return NextResponse.json({ ok: true, job: data, deliveryCode })
   } catch (err) {
     console.error("[gyema] guest accept route error:", err)
     return NextResponse.json({ ok: false, reason: "server_error" }, { status: 500 })

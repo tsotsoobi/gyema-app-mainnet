@@ -24,7 +24,13 @@ export const runtime = "nodejs"
 // reach a client. Declared as an array so each column sits on its own line
 // and the list stays verifiable at a glance.
 //
-// 17 columns. sender_phone is not one of them and must never be added here.
+// 18 columns. sender_phone is not one of them and must never be added here.
+//
+// delivery_code_hash is the one column selected for something other than
+// display: the mapper below emits its NULLITY as hasDeliveryCode and drops
+// the value. It must never be mapped through. The code space is 4 digits, so
+// handing the hash to the courier hands them the code, and a code the courier
+// already knows is no longer evidence they reached the door.
 const COURIER_JOB_COLUMNS = [
   "tracking_id",
   "pickup_area",
@@ -43,9 +49,10 @@ const COURIER_JOB_COLUMNS = [
   "pickup_confirmed_by",
   "delivery_confirmed_at",
   "delivery_confirmed_by",
+  "delivery_code_hash",
 ].join(", ")
 
-// The row those 17 columns produce. Declared explicitly because supabase-js
+// The row those 18 columns produce. Declared explicitly because supabase-js
 // can only infer a row shape from a string LITERAL passed to .select(); given
 // a joined constant it falls back to GenericStringError and the mapper below
 // stops typechecking. Keep this in sync with COURIER_JOB_COLUMNS.
@@ -67,6 +74,7 @@ type GuestJobRow = {
   pickup_confirmed_by: string | null
   delivery_confirmed_at: string | null
   delivery_confirmed_by: string | null
+  delivery_code_hash: string | null
 }
 
 export async function POST(request: NextRequest) {
@@ -140,6 +148,8 @@ export async function POST(request: NextRequest) {
         pickupConfirmedBy: j.pickup_confirmed_by,
         deliveryConfirmedAt: j.delivery_confirmed_at,
         deliveryConfirmedBy: j.delivery_confirmed_by,
+        // Nullity only. The hash itself stops here.
+        hasDeliveryCode: j.delivery_code_hash !== null,
       })),
     })
   } catch (err) {

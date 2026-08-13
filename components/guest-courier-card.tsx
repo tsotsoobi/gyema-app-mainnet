@@ -1,15 +1,23 @@
 "use client"
 
+import { useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { type CourierGuestJob } from "@/lib/guest-jobs"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { submitDeliveryCodeAsync, type CourierGuestJob } from "@/lib/guest-jobs"
+import { describeStamps, hasStamp, STAMP_COURIER_CODE } from "@/lib/delivery-stamps"
 
 // The persistent card for a guest job this courier has accepted. Deliberately
 // NOT ListingCard: that component is shared and typed to Listing, and a guest
 // job is a different rail with no poster, no Pi price, and no listing id.
 //
-// Read-only by design. Every value here is display; the confirmations belong
-// to the sender on the public tracker.
+// Display, with exactly one write: the delivery code the recipient reads out
+// at the door. Everything else here is still reflected state, and the sender's
+// own sign-off still belongs to the sender on the public tracker. The code
+// field is the courier attesting to where they are standing, which is the one
+// fact the tracker cannot establish on their behalf.
 
 // Statuses a courier no longer acts on. Mirrors the muted treatment the Past
 // section gives finished listings, without touching that component.
@@ -18,6 +26,50 @@ const TERMINAL_STATUSES = new Set(["delivered", "cancelled", "expired"])
 export function GuestCourierCard({ job }: { job: CourierGuestJob }) {
   const muted = TERMINAL_STATUSES.has(job.status)
   const when = job.whenPref === "date" ? job.scheduledDate : job.whenPref
+
+  const [code, setCode] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [codeError, setCodeError] = useState<string | null>(null)
+  const [codeAccepted, setCodeAccepted] = useState(false)
+  const [locked, setLocked] = useState(false)
+
+  // The field appears only while the package is in transit and only for jobs
+  // that carry a code. Once this courier's stamp is on the row it goes away:
+  // re-entering a code that already landed can only spend attempts.
+  const alreadyStamped = hasStamp(job.deliveryConfirmedBy, STAMP_COURIER_CODE)
+  const showCodeEntry =
+    job.status === "in_transit" && job.hasDeliveryCode && !alreadyStamped && !codeAccepted
+
+  const handleSubmitCode = async () => {
+    if (submitting || code.length !== 4) return
+    setSubmitting(true)
+    setCodeError(null)
+    const result = await submitDeliveryCodeAsync({ trackingId: job.trackingId, code })
+    setSubmitting(false)
+    if (result.ok) {
+      setCodeAccepted(true)
+      return
+    }
+    if (result.reason === "code_locked") {
+      setLocked(true)
+      setCodeError(
+        "Too many wrong codes. This delivery can no longer be closed with a code. Contact Gyema dispatch."
+      )
+    } else if (result.reason === "wrong_code") {
+      const left = result.attemptsLeft ?? 0
+      setCodeError(
+        `That code is not right. ${left} ${left === 1 ? "try" : "tries"} left before it locks.`
+      )
+    } else if (result.reason === "not_assigned" || result.reason === "unauthorized") {
+      setCodeError("Sign in with Pi as the courier who accepted this delivery.")
+    } else if (result.reason === "not_confirmable" || result.reason === "state_changed") {
+      setCodeError("This delivery cannot be confirmed right now. Reopen the tab to refresh.")
+    } else if (result.reason === "network") {
+      setCodeError("Network problem. Please try again.")
+    } else {
+      setCodeError("Could not submit that code. Please try again.")
+    }
+  }
 
   return (
     <Card
@@ -79,6 +131,49 @@ export function GuestCourierCard({ job }: { job: CourierGuestJob }) {
         </p>
       </div>
 
+      {/* The card's only write. Plainly labelled: the courier is being asked
+          for a number somebody else is holding, so the copy says whose. */}
+      {showCodeEntry && (
+        <div className="rounded-md p-3 space-y-2" style={{ backgroundColor: "#F5B80022", border: "1px solid #F5B80066" }}>
+          <p className="text-sm font-semibold">Handing the package over?</p>
+          <p className="text-xs text-muted-foreground">
+            Ask the person receiving the package for their 4-digit delivery
+            code. The sender gave it to them. Entering it here records that you
+            made the handover in person.
+          </p>
+          <div className="space-y-1.5">
+            <Label htmlFor={`code-${job.trackingId}`}>Delivery code from the recipient</Label>
+            <Input
+              id={`code-${job.trackingId}`}
+              inputMode="numeric"
+              maxLength={4}
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ""))}
+              placeholder="1234"
+              disabled={locked}
+            />
+          </div>
+          {codeError && <p className="text-xs" style={{ color: "#DC2626" }}>{codeError}</p>}
+          <Button
+            className="w-full"
+            disabled={submitting || locked || code.length !== 4}
+            onClick={handleSubmitCode}
+          >
+            {submitting ? "Checking..." : "Submit delivery code"}
+          </Button>
+        </div>
+      )}
+
+      {(codeAccepted || alreadyStamped) && job.status !== "delivered" && (
+        <div className="rounded-md p-3 space-y-1" style={{ backgroundColor: "#15803D14", border: "1px solid #15803D33" }}>
+          <p className="text-sm font-semibold" style={{ color: "#15803D" }}>Delivery code accepted</p>
+          <p className="text-xs" style={{ color: "#166534" }}>
+            Your handover is recorded. The delivery closes once the sender signs
+            off on the tracker.
+          </p>
+        </div>
+      )}
+
       {/* Sender-side sign-off, reflected only. Absent until the sender
           confirms on the public tracker. */}
       {(job.pickupConfirmedAt || job.deliveryConfirmedAt) && (
@@ -93,7 +188,9 @@ export function GuestCourierCard({ job }: { job: CourierGuestJob }) {
           {job.deliveryConfirmedAt && (
             <p className="text-xs" style={{ color: "#15803D" }}>
               Delivery confirmed
-              {job.deliveryConfirmedBy ? ` by ${job.deliveryConfirmedBy}` : ""}
+              {describeStamps(job.deliveryConfirmedBy)
+                ? ` by ${describeStamps(job.deliveryConfirmedBy)}`
+                : ""}
               {" \u00b7 "}
               {formatDate(job.deliveryConfirmedAt)}
             </p>
