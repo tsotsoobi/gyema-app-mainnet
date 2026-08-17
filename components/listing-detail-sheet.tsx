@@ -158,12 +158,12 @@ export function ListingDetailSheet({
   // the ?listing handler in app/page.tsx. Set PI_APP_HOST to whatever host
   // the app resolves at inside Pi Browser. Switch it to "gyema.pi" once that
   // domain claim finalizes; until then use the live PiNet subdomain host.
-  const PI_APP_HOST = "gyema8841.pinet.com"
+  const PI_APP_HOST = "gyema3681.pinet.com"
   const shareUrl = `https://${PI_APP_HOST}/?listing=${listing.trackingId}`
   const shareText =
     listing.kind === "package"
-      ? `Gyema Sender needs a delivery ${listing.fromCity} → ${listing.toCity}${shareDate ? ` on ${shareDate},` : ""} paying ${price} π. Open in Pi Browser to connect:`
-      : `Gyema Traveller heading ${listing.fromCity} → ${listing.toCity}${shareDate ? ` on ${shareDate},` : ""} carrying packages for ${price} π. Open in Pi Browser to connect:`
+      ? `Gyema Sender needs a delivery ${listing.fromCity} → ${listing.toCity}${shareDate ? ` on ${shareDate},` : ""} paying ${price} π. #PiTestnet transaction. Open in Pi Browser to connect:`
+      : `Gyema Traveller heading ${listing.fromCity} → ${listing.toCity}${shareDate ? ` on ${shareDate},` : ""} carrying packages for ${price} π. #PiTestnet transaction. Open in Pi Browser to connect:`
   const shareXHref = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
     `${shareText} ${shareUrl}`,
   )}`
@@ -365,7 +365,6 @@ export function ListingDetailSheet({
     try {
       const updated = await confirmCompletionAsync({
         listingId: listing.id,
-        role,
       })
       if (!updated) {
         setActionError("Could not confirm completion. Please try again.")
