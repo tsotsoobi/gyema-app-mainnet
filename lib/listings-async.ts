@@ -331,87 +331,61 @@ export async function releaseListingAsync(input: {
   }
 }
 
-// Confirm completion of a delivery from one party's side.
+// Confirm completion of a delivery from the caller's own side.
 //
-// Roles work like this:
-//   - kind = 'package' (Sender posted): poster is the Sender,
-//     the matched user is the Traveller.
-//   - kind = 'trip' (Traveller posted): poster is the Traveller,
-//     the matched user is the Sender.
+// The caller does NOT say which side that is. The confirmation runs
+// server-side at /api/listings/confirm-completion, which verifies the caller
+// from their Supabase session token and hands the listing id and that
+// verified pi_uid to a database function; the function reads the row and
+// decides for itself which of the two attestation columns the caller owns
+// (on a 'package' the poster is the sender, on a 'trip' the poster is the
+// traveller). Nothing on this side of the wire names a party.
 //
-// We DON'T re-derive role here from kind — the caller already knows
-// because it's their listing. The caller passes whether THEY are
-// confirming as the sender or the traveller.
+// This used to take a `role` argument and write the column that argument
+// named through the authed client. The listings UPDATE policy is row-level:
+// it admits the poster and the matched party to the row and cannot tell
+// which column a request is writing, so one party could set both flags and
+// close a delivery alone. The authenticated role no longer holds the grant
+// to write those columns at all — see
+// db/migrations/2026-08-14_listing_completion_rls.sql.
 //
-// If the other side has already confirmed, the listing transitions to
-// 'completed' and completed_at is set. Otherwise the listing stays in
-// 'matched' but the relevant *_confirmed flag is now true.
+// The route returns the listing whenever the caller's attestation is on the
+// record, which includes a repeat confirmation: the same call made twice is
+// not an error and returns the current row. Any refusal — not a party, no
+// such listing, expired, already completed without this attestation — comes
+// back as a single undifferentiated reason and surfaces here as null.
 export async function confirmCompletionAsync(input: {
   listingId: string
-  role: "sender" | "traveller"
 }): Promise<Listing | null> {
-  const authed = getAuthedClient()
-
-  // First, read current confirmation state so we know if THIS confirmation
-  // is the one that completes the delivery.
-  const { data: existing, error: readError } = await authed
-    .from("listings")
-    .select("sender_confirmed, traveller_confirmed, status")
-    .eq("id", input.listingId)
-    .single()
-
-  if (readError || !existing) {
-    console.error("confirmCompletionAsync read error:", readError)
+  const session = getSupabaseSession()
+  if (!session?.accessToken) {
+    console.error("confirmCompletionAsync: no active Supabase session")
     return null
   }
 
-  // Listings that haven't been matched yet can't be confirmed.
-  if (existing.status === "open" || existing.status === "expired") {
-    console.warn("confirmCompletionAsync: listing not in matched state")
+  try {
+    const res = await fetch("/api/listings/confirm-completion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        accessToken: session.accessToken,
+        listingId: input.listingId,
+      }),
+    })
+    const body = (await res.json()) as {
+      ok: boolean
+      listing?: ListingRow
+      reason?: string
+    }
+    if (!res.ok || !body.ok || !body.listing) {
+      console.warn("confirmCompletionAsync: not confirmed:", body?.reason)
+      return null
+    }
+    return fromRow(body.listing)
+  } catch (err) {
+    console.error("confirmCompletionAsync error:", err)
     return null
   }
-  // Already completed — return as-is, no double-completion.
-  if (existing.status === "completed") {
-    const { data, error } = await authed
-      .from("listings")
-      .select("*")
-      .eq("id", input.listingId)
-      .single()
-    if (error || !data) return null
-    return fromRow(data as ListingRow)
-  }
-
-  const otherAlreadyConfirmed =
-    input.role === "sender"
-      ? existing.traveller_confirmed
-      : existing.sender_confirmed
-
-  // Build the update: flip THIS side's flag. If the other side was already
-  // true, also transition the listing to 'completed' and stamp completed_at.
-  const update: Record<string, unknown> = {}
-  if (input.role === "sender") {
-    update.sender_confirmed = true
-  } else {
-    update.traveller_confirmed = true
-  }
-  if (otherAlreadyConfirmed) {
-    update.status = "completed"
-    update.completed_at = new Date().toISOString()
-  }
-
-  const { data, error } = await authed
-    .from("listings")
-    .update(update)
-    .eq("id", input.listingId)
-    .select()
-    .single()
-
-  if (error || !data) {
-    console.error("confirmCompletionAsync update error:", error)
-    return null
-  }
-
-  return fromRow(data as ListingRow)
 }
 
 // Cancel a matched listing: either party (poster or matched user) can call this

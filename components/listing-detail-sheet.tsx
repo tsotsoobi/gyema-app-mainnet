@@ -365,7 +365,6 @@ export function ListingDetailSheet({
     try {
       const updated = await confirmCompletionAsync({
         listingId: listing.id,
-        role,
       })
       if (!updated) {
         setActionError("Could not confirm completion. Please try again.")
