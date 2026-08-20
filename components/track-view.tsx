@@ -78,6 +78,14 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
     void runLookup(trackingId)
   }
 
+  // Courier half of the delivery stamp. Derived once at component scope
+  // because two cards read it: the delivery-code card withdraws on it, and
+  // the confirm-delivery card words itself from it. Non-guest results and
+  // the empty and not-found states resolve to false.
+  const guestResult =
+    result && result !== "not-found" && result.kind === "guest" ? result : null
+  const courierConfirmed = hasStamp(guestResult?.deliveryConfirmedBy, STAMP_COURIER_CODE)
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#FEF7E6" }}>
       <div className="p-4 md:py-8" style={{ background: "linear-gradient(90deg, #1E1B4B, #15803D)" }}>
@@ -141,78 +149,16 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
 
             <DeliveryTracker listing={result} />
 
-            {result.kind === "guest" && (() => {
-              const confirmedAt = confirmedAtLocal ?? result.pickupConfirmedAt
-              if (confirmedAt) {
-                if (result.status === "delivered" || result.status === "completed") return null
-                return (
-                  <div className="rounded-md p-3 space-y-1" style={{ backgroundColor: "#15803D14", border: "1px solid #15803D33" }}>
-                    <p className="text-sm font-semibold" style={{ color: "#15803D" }}>Pickup confirmed</p>
-                    <p className="text-xs" style={{ color: "#166534" }}>
-                      You confirmed the courier collected this package.
-                    </p>
-                  </div>
-                )
-              }
-              if (result.status !== "accepted") return null
-              return (
-                <div className="rounded-md p-3 space-y-2" style={{ backgroundColor: "#F5B80022", border: "1px solid #F5B80066" }}>
-                  <p className="text-sm font-semibold">Courier collected your package?</p>
-                  <p className="text-xs text-muted-foreground">
-                    Confirm pickup with the last 4 digits of the phone you posted with, so only you can confirm this delivery.
-                  </p>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="confirm-last4">Last 4 digits</Label>
-                    <Input
-                      id="confirm-last4"
-                      inputMode="numeric"
-                      maxLength={4}
-                      value={confirmLast4}
-                      onChange={(e) => setConfirmLast4(e.target.value.replace(/[^0-9]/g, ""))}
-                      placeholder="1234"
-                    />
-                  </div>
-                  {confirmError && <p className="text-xs" style={{ color: "#DC2626" }}>{confirmError}</p>}
-                  <Button
-                    className="w-full"
-                    disabled={confirming || confirmLast4.length !== 4}
-                    onClick={async () => {
-                      setConfirming(true)
-                      setConfirmError(null)
-                      try {
-                        const res = await fetch("/api/guest/confirm-pickup", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ trackingId: result.trackingId, last4: confirmLast4 }),
-                        })
-                        const body = await res.json()
-                        if (body.ok) {
-                          setConfirmedAtLocal(body.confirmedAt ?? new Date().toISOString())
-                        } else if (body.reason === "guard_failed") {
-                          setConfirmError("Those digits do not match the phone this delivery was posted with.")
-                        } else if (body.reason === "not_confirmable" || body.reason === "state_changed") {
-                          setConfirmError("This delivery cannot be confirmed right now. Refreshing status.")
-                          void runLookup(result.trackingId)
-                        } else {
-                          setConfirmError("Could not confirm. Please try again.")
-                        }
-                      } catch {
-                        setConfirmError("Network problem. Please try again.")
-                      } finally {
-                        setConfirming(false)
-                      }
-                    }}
-                  >
-                    {confirming ? "Confirming..." : "Confirm pickup"}
-                  </Button>
-                </div>
-              )
-            })()}
-            {/* Delivery code reveal. Deliberately NOT styled like the amber
-                confirm cards above and below it: this one asks the sender to
-                authenticate but changes nothing, and it should not read as a
-                third thing to sign off. */}
-            {result.kind === "guest" && result.hasDeliveryCode &&
+            {/* Delivery code reveal, first card in the stack. At accepted the
+                sender has to meet the code before the amber confirm cards
+                below it, or a reveal gets typed into a pickup stamp. Still
+                deliberately NOT styled like those cards: this one asks the
+                sender to authenticate but changes nothing, and it should not
+                read as a third thing to sign off. It stays through in_transit
+                as the recovery path for a code that never reached the
+                recipient, and withdraws only once the courier half of the
+                stamp is in. */}
+            {result.kind === "guest" && result.hasDeliveryCode && !courierConfirmed &&
               result.status !== "delivered" &&
               result.status !== "cancelled" &&
               result.status !== "expired" && (
@@ -280,6 +226,73 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
               </div>
             )}
             {result.kind === "guest" && (() => {
+              const confirmedAt = confirmedAtLocal ?? result.pickupConfirmedAt
+              if (confirmedAt) {
+                if (result.status === "delivered" || result.status === "completed") return null
+                return (
+                  <div className="rounded-md p-3 space-y-1" style={{ backgroundColor: "#15803D14", border: "1px solid #15803D33" }}>
+                    <p className="text-sm font-semibold" style={{ color: "#15803D" }}>Pickup confirmed</p>
+                    <p className="text-xs" style={{ color: "#166534" }}>
+                      You confirmed the courier collected this package.
+                    </p>
+                  </div>
+                )
+              }
+              if (result.status !== "accepted") return null
+              return (
+                <div className="rounded-md p-3 space-y-2" style={{ backgroundColor: "#F5B80022", border: "1px solid #F5B80066" }}>
+                  <p className="text-sm font-semibold">Courier collected your package?</p>
+                  <p className="text-xs text-muted-foreground">
+                    Confirm pickup with the last 4 digits of the phone you posted with, so only you can confirm this delivery.
+                  </p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="confirm-last4">Last 4 digits</Label>
+                    <Input
+                      id="confirm-last4"
+                      inputMode="numeric"
+                      maxLength={4}
+                      value={confirmLast4}
+                      onChange={(e) => setConfirmLast4(e.target.value.replace(/[^0-9]/g, ""))}
+                      placeholder="1234"
+                    />
+                  </div>
+                  {confirmError && <p className="text-xs" style={{ color: "#DC2626" }}>{confirmError}</p>}
+                  <Button
+                    className="w-full"
+                    disabled={confirming || confirmLast4.length !== 4}
+                    onClick={async () => {
+                      setConfirming(true)
+                      setConfirmError(null)
+                      try {
+                        const res = await fetch("/api/guest/confirm-pickup", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ trackingId: result.trackingId, last4: confirmLast4 }),
+                        })
+                        const body = await res.json()
+                        if (body.ok) {
+                          setConfirmedAtLocal(body.confirmedAt ?? new Date().toISOString())
+                        } else if (body.reason === "guard_failed") {
+                          setConfirmError("Those digits do not match the phone this delivery was posted with.")
+                        } else if (body.reason === "not_confirmable" || body.reason === "state_changed") {
+                          setConfirmError("This delivery cannot be confirmed right now. Refreshing status.")
+                          void runLookup(result.trackingId)
+                        } else {
+                          setConfirmError("Could not confirm. Please try again.")
+                        }
+                      } catch {
+                        setConfirmError("Network problem. Please try again.")
+                      } finally {
+                        setConfirming(false)
+                      }
+                    }}
+                  >
+                    {confirming ? "Confirming..." : "Confirm pickup"}
+                  </Button>
+                </div>
+              )
+            })()}
+            {result.kind === "guest" && (() => {
               // On a coded job the courier may stamp first, so a non-null
               // delivery_confirmed_at no longer means the SENDER signed off.
               // Reading it that way would withdraw this form from a sender who
@@ -289,7 +302,6 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
                 : result.hasDeliveryCode
                   ? hasStamp(result.deliveryConfirmedBy, STAMP_SENDER)
                   : !!result.deliveryConfirmedAt
-              const courierConfirmed = hasStamp(result.deliveryConfirmedBy, STAMP_COURIER_CODE)
               if (senderConfirmed) {
                 if (result.status === "delivered" || result.status === "completed") return null
                 return (
