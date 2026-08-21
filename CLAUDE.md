@@ -63,13 +63,26 @@ appears (Vercel list, or `gh api .../deployments` with status `success`).
 
 ## Mirroring between networks
 
-Testnet first, then mirror to Mainnet. Byte-identity per file
-(`git diff --no-index --quiet` plus existence test) is the default gate, with one
-carve-out: **network-specific files mirror the change, not the bytes.** Before any
+Testnet first, then mirror to Mainnet. Byte-identity per file is the default gate, with
+one carve-out: **network-specific files mirror the change, not the bytes.** Before any
 mirror, scan the file set for `pinet\.com|Testnet|testnet|8841|3681`; any file that
 hits gets the change hand-applied onto its own network's version. Known
 network-specific file: `components/listing-detail-sheet.tsx` (PI_APP_HOST, share
-copy).
+copy). CLAUDE.md is the documented exception: it hits the scan and still mirrors as
+bytes, because the same file ships in both repos and rules that name a network say so.
+
+The gate is blob-hash equality, checked TWICE, plus an existence test on the target
+path. `git hash-object <file>` on the Mainnet working file before the commit, and
+`git rev-parse HEAD:<path>` on the committed blob after, both matching
+`git rev-parse <source-commit>:<path>` from the Testnet clone. Those are two separate
+facts: the first says the copy landed, the second says what actually ships. Hashes
+match or the mirror stops.
+
+`git diff --no-index --quiet` is a secondary signal, never the gate. It normalizes line
+endings, so it is not a byte comparison: both clones run `core.autocrlf=true`, and
+working copies carry CRs that committed blobs do not. Measured 20 August on
+`components/track-view.tsx`, it exited 0 on files whose raw sizes differed by 386
+bytes, exactly the CR count.
 
 ## Database facts that bite
 
@@ -81,6 +94,13 @@ copy).
   open). Terminal guest statuses are operator-applied by hand until F14 is fixed.
 - Supabase SQL Editor does not preserve transaction state across executions. Prefer
   single auto-commit statements with verification between each.
+- Before any guarded UPDATE on a free-text column, run a bracketed pre-flight:
+  `select '[' || col || ']', length(col) from ... where <key>`. A guarded UPDATE whose
+  guard misses matches zero rows and still reports Success, and whitespace is invisible
+  in the result grid. Found live 21 August: `GYM-2F5367` held `'Asylum down '` at
+  length 12, the guard on `'Asylum down'` matched nothing, and only the bracket
+  exposed it. Off-list area inputs are stored untrimmed
+  (`app/api/guest/create/route.ts`, fix queued). See invariant 8.
 - A column-level revoke cannot subtract from a table-wide grant. Drop the table
   grant and re-grant per column.
 - When an authenticated write fails generically, check
