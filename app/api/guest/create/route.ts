@@ -18,6 +18,24 @@ export const runtime = "nodejs"
 
 // Area validation and server-side pricing come from lib/guest-pricing.
 
+// Free-text normalizer for hand-typed strings. Trims, and collapses a
+// whitespace-only value to null so an optional field left blank stores NULL
+// rather than " ". A non-string, including a missing field, returns null:
+// the required-field check below rejects the two that matter, and the
+// optional ones were already inserting null for a missing field.
+//
+// Untrimmed values reached guest_jobs exactly as typed, so "Kutunse " and
+// "Kutunse" were two different areas to every exact-match comparison,
+// including operator SQL. Found live 21 August on three rows across both
+// networks. Phones are deliberately not normalized here: both last-4 guards
+// strip non-digits before comparing (app/api/guest/delivery-code/route.ts,
+// app/api/guest/confirm-delivery/route.ts), so whitespace cannot reach them.
+function cleanText(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed === "" ? null : trimmed
+}
+
 function mintGymCode(): string {
   return `GYM-${Math.random().toString(16).slice(2, 8).toUpperCase()}`
 }
@@ -46,15 +64,24 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
-      pickupArea, pickupLandmark,
-      dropoffArea, dropoffLandmark,
-      packageSize, contentsNote,
-      recipientName, recipientPhone,
+      pickupArea: rawPickupArea, pickupLandmark: rawPickupLandmark,
+      dropoffArea: rawDropoffArea, dropoffLandmark: rawDropoffLandmark,
+      packageSize, contentsNote: rawContentsNote,
+      recipientName: rawRecipientName, recipientPhone,
       senderPhone,
       whenPref, scheduledDate,
       paymentType,
       offList,
     } = body ?? {}
+
+    // Normalized before any validation, so the required check, the bounded-list
+    // check, the price computation and the insert all read one value.
+    const pickupArea = cleanText(rawPickupArea)
+    const dropoffArea = cleanText(rawDropoffArea)
+    const pickupLandmark = cleanText(rawPickupLandmark)
+    const dropoffLandmark = cleanText(rawDropoffLandmark)
+    const contentsNote = cleanText(rawContentsNote)
+    const recipientName = cleanText(rawRecipientName)
 
     // Required-field validation
     if (!pickupArea || !dropoffArea || !packageSize || !senderPhone) {
