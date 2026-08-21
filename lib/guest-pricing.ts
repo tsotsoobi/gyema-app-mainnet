@@ -12,6 +12,7 @@ export const GUEST_AREAS: Record<string, GuestZone> = {
   "Accra Central": "A",
   "Adabraka": "A",
   "Airport Residential": "A",
+  "Asylum Down": "A",
   "Cantonments": "A",
   "Dzorwulu": "A",
   "Labone": "A",
