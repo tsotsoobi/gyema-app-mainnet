@@ -150,6 +150,14 @@ grant usage on schema public to gyema_reader;
 -- fewer than four digits are stored). The operator needs to be able to see
 -- that case in the report. It is reported as a count, never as the digits.
 --
+-- SHORT NUMBERS SHOW NO DIGITS AT ALL. Below eight digits the head and the
+-- guard overlap: on a stored value of 1234 the last four ARE 1234, so showing
+-- three of them would hand over three quarters of the guard and leave ten
+-- guesses. Anything under eight digits reports only its length. A real Ghana
+-- number is ten digits local or twelve with the country code, so this affects
+-- malformed values only, which is exactly where the operator needs a count and
+-- nothing more.
+--
 -- NO FINGERPRINT, deliberately. An md5 or sha of the number would let the
 -- operator spot two jobs from one sender, and would also let anyone holding
 -- the report recover the number by exhausting a nine or ten digit space in
@@ -178,6 +186,8 @@ as $$
       then '(none)'
     when length(regexp_replace(raw, '[^0-9]', '', 'g')) < 4
       then '(unusable, ' || length(regexp_replace(raw, '[^0-9]', '', 'g')) || ' digits)'
+    when length(regexp_replace(raw, '[^0-9]', '', 'g')) < 8
+      then '(short, ' || length(regexp_replace(raw, '[^0-9]', '', 'g')) || ' digits)'
     else
       left(regexp_replace(raw, '[^0-9]', '', 'g'), 3)
       || repeat('*', greatest(length(regexp_replace(raw, '[^0-9]', '', 'g')) - 3, 0))
