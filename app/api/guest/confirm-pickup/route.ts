@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
+import { GuestLast4Body, parseJsonBody } from "@/lib/schemas"
 import { verifyLast4 } from "@/lib/last4-guard"
 export const runtime = "nodejs"
 
@@ -9,20 +10,9 @@ export const runtime = "nodejs"
 // Only an accepted job can be confirmed. Idempotent on re-confirm.
 // Never expose sender_phone or any contact field in any response.
 export async function POST(req: NextRequest) {
-  let body: { trackingId?: string; last4?: string }
-  try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ ok: false, reason: "invalid_body" }, { status: 400 })
-  }
-  const trackingId = (body.trackingId ?? "").trim().toUpperCase()
-  const last4 = (body.last4 ?? "").trim()
-  if (!/^GYM-[A-Z0-9]{6}$/.test(trackingId)) {
-    return NextResponse.json({ ok: false, reason: "invalid_tracking_id" }, { status: 400 })
-  }
-  if (!/^[0-9]{4}$/.test(last4)) {
-    return NextResponse.json({ ok: false, reason: "invalid_last4" }, { status: 400 })
-  }
+  const parsed = await parseJsonBody(req, GuestLast4Body)
+  if (!parsed.ok) return parsed.response
+  const { trackingId, last4 } = parsed.data
 
   const admin = createAdminClient()
   const { data, error } = await admin

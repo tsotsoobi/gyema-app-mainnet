@@ -83,7 +83,11 @@ export const authenticateWithPi = async (): Promise<PiUser> => {
   const onIncompletePaymentFound = (payment: PiPayment) => {
     // When real escrow is built (v2), this callback notifies the backend
     // that an unfinished payment exists so it can be resolved.
-    console.log("[gyema] Incomplete payment found:", payment)
+    //
+    // The identifier only. The full payment object carries memo and metadata,
+    // which name a listing and a tracking ID, and this line runs in a console
+    // a screenshot can reach.
+    console.log("[gyema] Incomplete payment found:", payment?.identifier)
   }
 
   try {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { resolveCaller } from "@/lib/route-auth"
+import { GuestAcceptBody, parseJsonBody } from "@/lib/schemas"
 import { mintDeliveryCode, hashDeliveryCode } from "@/lib/delivery-code"
 
 // Server-side guest job claim, mirroring /api/listings/accept. Verify the
@@ -42,10 +43,9 @@ const ACCEPTED_JOB_COLUMNS = [
 
 export async function POST(request: NextRequest) {
   try {
-    const { accessToken, trackingId, accepterWhatsapp } = await request.json()
-    if (!accessToken || !trackingId) {
-      return NextResponse.json({ ok: false, reason: "bad_request" }, { status: 400 })
-    }
+    const parsed = await parseJsonBody(request, GuestAcceptBody)
+    if (!parsed.ok) return parsed.response
+    const { accessToken, trackingId, accepterWhatsapp } = parsed.data
     const admin = createAdminClient()
     const caller = await resolveCaller(admin, accessToken)
     if (!caller) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
+import { parseQuery, trackingId as trackingIdSchema } from "@/lib/schemas"
 
 export const runtime = "nodejs"
 
@@ -19,14 +20,9 @@ export const runtime = "nodejs"
 // writes it. An unverified row is therefore either an unmatched draft or an
 // abandoned one, and either way it stays invisible and ages out via TTL.
 export async function GET(req: NextRequest) {
-  const raw = req.nextUrl.searchParams.get("trackingId")
-  if (!raw) {
-    return NextResponse.json({ error: "trackingId is required" }, { status: 400 })
-  }
-  const trackingId = raw.trim().toUpperCase()
-  if (!/^GYM-[A-Z0-9]{6}$/.test(trackingId)) {
-    return NextResponse.json({ error: "Invalid tracking ID format" }, { status: 400 })
-  }
+  const parsed = parseQuery(req.nextUrl.searchParams.get("trackingId"), trackingIdSchema)
+  if (!parsed.ok) return parsed.response
+  const trackingId = parsed.data
 
   const admin = createAdminClient()
   const { data, error } = await admin

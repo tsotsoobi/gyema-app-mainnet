@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { resolveCaller } from "@/lib/route-auth"
+import { ListingAcceptBody, parseJsonBody } from "@/lib/schemas"
 
 // Server-side listing claim. Runs with the service_role client so it bypasses
 // the listings RLS UPDATE policy, which only allows the poster (or an
@@ -20,14 +21,9 @@ export const runtime = "nodejs"
 
 export async function POST(request: NextRequest) {
   try {
-    const { accessToken, listingId, accepterWhatsapp } = await request.json()
-
-    if (!accessToken || !listingId) {
-      return NextResponse.json(
-        { ok: false, reason: "bad_request" },
-        { status: 400 },
-      )
-    }
+    const parsed = await parseJsonBody(request, ListingAcceptBody)
+    if (!parsed.ok) return parsed.response
+    const { accessToken, listingId, accepterWhatsapp } = parsed.data
 
     const admin = createAdminClient()
 

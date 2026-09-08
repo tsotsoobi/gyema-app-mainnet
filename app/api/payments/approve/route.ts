@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { resolveCaller } from "@/lib/route-auth"
+import { PaymentApproveBody, parseJsonBody } from "@/lib/schemas"
 import {
   authorizePayment,
   fetchPiPayment,
@@ -39,11 +40,9 @@ export const runtime = "nodejs"
 
 export async function POST(request: NextRequest) {
   try {
-    const { accessToken, paymentId } = await request.json()
-
-    if (!paymentId || typeof paymentId !== "string") {
-      return NextResponse.json({ ok: false, reason: "bad_request" }, { status: 400 })
-    }
+    const parsed = await parseJsonBody(request, PaymentApproveBody)
+    if (!parsed.ok) return parsed.response
+    const { accessToken, paymentId } = parsed.data
 
     const apiKey = process.env.PI_API_KEY
     if (!apiKey) {

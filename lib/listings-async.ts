@@ -149,6 +149,16 @@ export async function getOpenListingsAsync(): Promise<Listing[]> {
 export async function getListingsByUserAsync(userId: string): Promise<Listing[]> {
   // Return both: listings the user posted, AND listings where the user
   // accepted (matched_with_user_id). Either makes the listing "theirs".
+  // The uid is interpolated into a PostgREST filter string, where a comma, a
+  // dot or a paren is structure rather than data: a crafted value would change
+  // the shape of the filter instead of the value being compared (S-18). Pi uids
+  // are alphanumeric, so anything else is refused before the query is built
+  // rather than escaped, which PostgREST gives no way to do reliably.
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(userId)) {
+    console.error("getListingsByUserAsync: uid failed the filter safety check")
+    return []
+  }
+
   const { data, error } = await getAuthedClient()
     .from("listings")
     .select(LISTING_COLUMNS)

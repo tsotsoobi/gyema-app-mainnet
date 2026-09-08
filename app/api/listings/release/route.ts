@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
+import { ListingActionBody, parseJsonBody } from "@/lib/schemas"
 import { resolveCaller } from "@/lib/route-auth"
 
 // Release a claim the caller made, reverting the listing to 'open'. Called
@@ -13,14 +14,9 @@ export const runtime = "nodejs"
 
 export async function POST(request: NextRequest) {
   try {
-    const { accessToken, listingId } = await request.json()
-
-    if (!accessToken || !listingId) {
-      return NextResponse.json(
-        { ok: false, reason: "bad_request" },
-        { status: 400 },
-      )
-    }
+    const parsed = await parseJsonBody(request, ListingActionBody)
+    if (!parsed.ok) return parsed.response
+    const { accessToken, listingId } = parsed.data
 
     const admin = createAdminClient()
 

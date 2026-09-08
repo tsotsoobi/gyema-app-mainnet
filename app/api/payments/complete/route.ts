@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { resolveCaller } from "@/lib/route-auth"
+import { PaymentCompleteBody, parseJsonBody } from "@/lib/schemas"
 import {
   authorizePayment,
   fetchPiPayment,
@@ -26,20 +27,15 @@ import {
 
 export const runtime = "nodejs"
 
-// Stellar transaction hashes are 64 hex characters. Checked for shape so an
-// arbitrary string is refused before it reaches Pi, not to validate the chain.
-const TXID = /^[0-9a-fA-F]{64}$/
+// The txid shape (64 hex characters) is checked by PaymentCompleteBody in
+// lib/schemas.ts, so an arbitrary string is refused before it reaches Pi. That
+// is a shape check, not a claim about the chain.
 
 export async function POST(request: NextRequest) {
   try {
-    const { accessToken, paymentId, txid } = await request.json()
-
-    if (!paymentId || typeof paymentId !== "string" || !txid || typeof txid !== "string") {
-      return NextResponse.json({ ok: false, reason: "bad_request" }, { status: 400 })
-    }
-    if (!TXID.test(txid)) {
-      return NextResponse.json({ ok: false, reason: "bad_txid" }, { status: 400 })
-    }
+    const parsed = await parseJsonBody(request, PaymentCompleteBody)
+    if (!parsed.ok) return parsed.response
+    const { accessToken, paymentId, txid } = parsed.data
 
     const apiKey = process.env.PI_API_KEY
     if (!apiKey) {

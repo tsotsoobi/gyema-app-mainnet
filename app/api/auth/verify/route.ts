@@ -32,6 +32,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { waitUntil } from "@vercel/functions"
 import { verifyPiAccessToken } from "@/lib/pi-platform"
+import { AuthVerifyBody } from "@/lib/schemas"
 import {
   findOrCreatePioneerUser,
   generatePioneerSession,
@@ -99,8 +100,12 @@ export async function POST(req: NextRequest) {
   }
 
   // 2. Validate the access token shape.
-  const accessToken = body.accessToken
-  if (!accessToken || typeof accessToken !== "string") {
+  //
+  // Bounded as well as present: this value is sent to Pi Platform in a header,
+  // and an unbounded one is a request a stranger chooses the size of.
+  const parsedBody = AuthVerifyBody.safeParse(body)
+  const accessToken = parsedBody.success ? parsedBody.data.accessToken : undefined
+  if (!accessToken) {
     const elapsed = Date.now() - startedAt
     console.warn("[auth/verify] Rejected: MISSING_TOKEN", { ms: elapsed })
     waitUntil(logAuthEvent({ event_type: "rejected_missing_token", elapsed_ms: elapsed }))

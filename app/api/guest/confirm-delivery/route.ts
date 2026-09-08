@@ -4,6 +4,7 @@ import { resolveCaller } from "@/lib/route-auth"
 import { hashDeliveryCode, hashesMatch } from "@/lib/delivery-code"
 import { STAMP_SENDER, STAMP_COURIER_CODE, hasStamp } from "@/lib/delivery-stamps"
 import { verifyLast4 } from "@/lib/last4-guard"
+import { GuestConfirmDeliveryBody, parseJsonBody } from "@/lib/schemas"
 export const runtime = "nodejs"
 
 // Delivery sign-off for guest jobs (handshake Part 2, closing end).
@@ -40,36 +41,16 @@ export const runtime = "nodejs"
 const MAX_CODE_ATTEMPTS = 5
 
 export async function POST(req: NextRequest) {
-  let body: {
-    trackingId?: string
-    via?: string
-    last4?: string
-    code?: string
-    accessToken?: string
-  }
-  try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ ok: false, reason: "invalid_body" }, { status: 400 })
-  }
-  const trackingId = (body.trackingId ?? "").trim().toUpperCase()
-  const via = (body.via ?? "").trim()
-  const last4 = (body.last4 ?? "").trim()
-  const code = (body.code ?? "").trim()
-  if (!/^GYM-[A-Z0-9]{6}$/.test(trackingId)) {
-    return NextResponse.json({ ok: false, reason: "invalid_tracking_id" }, { status: 400 })
-  }
-  // No default. An absent via is a malformed request, not a sender request:
-  // inferring one would put the discriminator back in the payload shape.
-  if (via !== STAMP_SENDER && via !== STAMP_COURIER_CODE) {
-    return NextResponse.json({ ok: false, reason: "invalid_via" }, { status: 400 })
-  }
-  if (via === STAMP_SENDER && !/^[0-9]{4}$/.test(last4)) {
-    return NextResponse.json({ ok: false, reason: "invalid_last4" }, { status: 400 })
-  }
-  if (via === STAMP_COURIER_CODE && !/^[0-9]{4}$/.test(code)) {
-    return NextResponse.json({ ok: false, reason: "invalid_code" }, { status: 400 })
-  }
+  // GuestConfirmDeliveryBody carries the discriminator rule: `via` must be one
+  // of the two stamps, and it decides whether last4 or code is required. There
+  // is no default, because inferring one would put the discriminator back into
+  // the shape of the payload rather than the value of a field.
+  const parsed = await parseJsonBody(req, GuestConfirmDeliveryBody)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
+  const { trackingId, via } = body
+  const last4 = body.last4 ?? ""
+  const code = body.code ?? ""
 
   const admin = createAdminClient()
   const { data, error } = await admin

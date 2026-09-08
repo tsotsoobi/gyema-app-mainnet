@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { resolveCaller } from "@/lib/route-auth"
+import { GuestMineBody, parseJsonBody } from "@/lib/schemas"
 
 // The courier's own accepted guest jobs. Before this route the accept sheet
 // was the only view of a claimed job, so the job vanished when the sheet
@@ -80,11 +81,9 @@ type GuestJobRow = {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json().catch(() => null)
-    const accessToken = body?.accessToken
-    if (!accessToken) {
-      return NextResponse.json({ ok: false, reason: "bad_request" }, { status: 400 })
-    }
+    const parsed = await parseJsonBody(request, GuestMineBody)
+    if (!parsed.ok) return parsed.response
+    const { accessToken } = parsed.data
 
     const admin = createAdminClient()
 
