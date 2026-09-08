@@ -66,6 +66,102 @@ export function piUidToSyntheticEmail(piUid: string): string {
   return `pi-${piUid}@gyema.local`
 }
 
+/** How many users a page of the fallback scan asks for. */
+const SCAN_PAGE_SIZE = 200
+
+/**
+ * Pages the fallback scan will read before giving up, so a bug cannot turn
+ * into an unbounded loop on a sign-in path. 100 pages of 200 is 20,000 users;
+ * if that is ever reached the answer is to stop scanning, not to scan harder.
+ */
+const SCAN_PAGE_LIMIT = 100
+
+/**
+ * Find one Supabase Auth user by exact email.
+ *
+ * WHY THIS EXISTS
+ *
+ * This lookup used to be `listUsers({ page: 1, perPage: 1000 })` followed by a
+ * find over the result. That is correct until the project has more than 1000
+ * users and silently wrong afterwards: a Pioneer outside the first page is
+ * invisible to it, so the caller concludes they do not exist, calls createUser
+ * for an email that is already taken, gets an error, and answers the sign in
+ * with PROVISIONING_ERROR. Retrying does not help. Testnet crossed 1000 users
+ * some time ago and reached 2689 by 7 September 2026, which is when this was
+ * found.
+ *
+ * TWO STEPS, in order:
+ *
+ *   1. Ask GoTrue's admin API for this email directly. Its `filter` parameter
+ *      is a partial match on email, so the result is verified against the exact
+ *      address before it is believed: a filter for pi-abc@gyema.local would
+ *      otherwise happily return pi-abcd@gyema.local.
+ *
+ *   2. If that finds nothing, page through listUsers until a short page comes
+ *      back. A short page is the end of the list; anything else is a page
+ *      boundary and stopping there is the bug this replaces. This runs when
+ *      the filtered lookup genuinely found nothing AND when an older GoTrue
+ *      ignored the parameter entirely, which is indistinguishable from here
+ *      and is why the scan is kept rather than deleted.
+ *
+ * Returns null only after both have looked. Throws if the scan itself fails,
+ * because "cannot tell" and "not there" must not answer the same way when the
+ * caller's next move is to create the user.
+ */
+export async function findAuthUserByEmail(
+  admin: SupabaseClient,
+  email: string
+): Promise<{ id: string } | null> {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  // --- Step 1: direct, filtered lookup ---
+  if (serviceRoleKey) {
+    try {
+      const url = `${supabaseUrl}/auth/v1/admin/users?per_page=${SCAN_PAGE_SIZE}&filter=${encodeURIComponent(email)}`
+      const res = await fetch(url, {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+        },
+        cache: "no-store",
+      })
+      if (res.ok) {
+        const body = (await res.json()) as { users?: Array<{ id?: string; email?: string }> }
+        const exact = (body.users ?? []).find(
+          (u) => (u.email ?? "").toLowerCase() === email.toLowerCase()
+        )
+        if (exact?.id) return { id: exact.id }
+      } else {
+        console.warn(`[supabase-admin] filtered user lookup returned ${res.status}, falling back to scan`)
+      }
+    } catch (error) {
+      console.warn("[supabase-admin] filtered user lookup failed, falling back to scan:", error)
+    }
+  }
+
+  // --- Step 2: paged scan, until a short page ---
+  for (let page = 1; page <= SCAN_PAGE_LIMIT; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({
+      page,
+      perPage: SCAN_PAGE_SIZE,
+    })
+    if (error) {
+      throw new Error(`[supabase-admin] listUsers failed on page ${page}: ${error.message}`)
+    }
+    const users = data?.users ?? []
+    const exact = users.find((u) => (u.email ?? "").toLowerCase() === email.toLowerCase())
+    if (exact?.id) return { id: exact.id }
+
+    // A short page is the end of the list. A full page is a boundary, and
+    // stopping on one is exactly the bug this function replaces.
+    if (users.length < SCAN_PAGE_SIZE) return null
+  }
+
+  throw new Error(
+    `[supabase-admin] user scan hit the ${SCAN_PAGE_LIMIT} page limit without a conclusive answer`
+  )
+}
+
 /**
  * Find or create a Supabase Auth user for a Pi-verified Pioneer.
  *
@@ -89,7 +185,7 @@ export function piUidToSyntheticEmail(piUid: string): string {
  *   1a. pi_username indexed lookup — the canonical key
  *   1b. pi_uid indexed lookup — legacy compat for rows pre-dating the
  *       username-key migration (shouldn't be reachable in practice)
- *   2.  listUsers fallback — defends against pioneers/auth.users drift
+ *   2.  email lookup fallback — defends against pioneers/auth.users drift
  *   3.  createUser — provisions a brand-new Pioneer
  *
  * Throws on any failure — the calling route should catch and return
@@ -160,19 +256,16 @@ export async function findOrCreatePioneerUser(params: {
     }
   }
 
-  // --- Step 2: Fallback — listUsers scan ---
-  // Only runs if no pioneers row matched either key. Defends against
-  // schema drift (e.g. a row created via SQL that didn't insert into
-  // pioneers).
+  // --- Step 2: Fallback — look the synthetic email up ---
+  // Only runs if no pioneers row matched either key. Defends against schema
+  // drift (e.g. a row created via SQL that didn't insert into pioneers).
+  //
+  // findAuthUserByEmail asks GoTrue for this address directly and only pages
+  // through the user list if that finds nothing. It used to be a single page
+  // of 1000 users, which stopped being correct the day the project passed
+  // 1000: see that function's header for what that did to a sign in.
   const email = piUidToSyntheticEmail(params.pi_uid)
-  const { data: existingList, error: listError } =
-    await admin.auth.admin.listUsers({ page: 1, perPage: 1000 })
-
-  if (listError) {
-    throw new Error(`[supabase-admin] listUsers failed: ${listError.message}`)
-  }
-
-  const existing = existingList?.users?.find((u) => u.email === email)
+  const existing = await findAuthUserByEmail(admin, email)
   if (existing) {
     // Found via fallback — backfill the pioneers row so the next sign-in
     // hits the fast path. Failure to backfill is non-fatal.
@@ -215,7 +308,7 @@ export async function findOrCreatePioneerUser(params: {
   }
 
   // Write to pioneers so the next sign-in is O(1). Failure here is
-  // non-fatal: the user exists in auth.users, and the listUsers fallback
+  // non-fatal: the user exists in auth.users, and the email lookup fallback
   // will still find them on the next sign-in (just slower until someone
   // notices and backfills manually).
   const { error: insertError } = await admin.from("pioneers").insert({
