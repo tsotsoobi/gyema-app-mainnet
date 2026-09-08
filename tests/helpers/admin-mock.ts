@@ -39,10 +39,50 @@ export class AdminMock {
     return this
   }
 
-  /** Sign in as a Pioneer for routes that derive identity from the token. */
+  /**
+   * Sign in as a Pioneer.
+   *
+   * The identity goes in app_metadata, which is where it lives now: only the
+   * service_role key can write it, so a route reading it is reading something
+   * the caller could not choose.
+   *
+   * user_metadata is populated too, with a DIFFERENT and deliberately
+   * attacker-shaped uid, because user_metadata is writable by the user with
+   * supabase.auth.updateUser. Any route that still reads it will act as
+   * "pi-forged-by-the-user" and the assertions will say so by name. Do not
+   * "fix" a test by making these two agree.
+   */
   asPioneer(pi_uid = "pi-uid-1", pi_username = "pioneer_one") {
     this.user = {
-      data: { user: { id: "sb-user-1", user_metadata: { pi_uid, pi_username } } },
+      data: {
+        user: {
+          id: "sb-user-1",
+          app_metadata: { pi_uid, pi_username },
+          user_metadata: {
+            pi_uid: "pi-forged-by-the-user",
+            pi_username: "forged_by_the_user",
+          },
+        },
+      },
+      error: null,
+    }
+    return this
+  }
+
+  /**
+   * A user who has written a Pi identity into their own user_metadata and has
+   * nothing in app_metadata: an account that predates the backfill, or someone
+   * who called updateUser and hoped. Every route must refuse this.
+   */
+  asForgedMetadataOnly(pi_uid = "pi-victim", pi_username = "victim_one") {
+    this.user = {
+      data: {
+        user: {
+          id: "sb-user-9",
+          app_metadata: {},
+          user_metadata: { pi_uid, pi_username },
+        },
+      },
       error: null,
     }
     return this
@@ -143,6 +183,11 @@ export function adminModule(mock: AdminMock) {
       access_token: "access-token-value",
       refresh_token: "refresh-token-value",
     })),
+    // Records the app_metadata stamp so a test can assert it happened, and
+    // happened before the session was minted.
+    setPioneerAppMetadata: vi.fn(async (params: unknown) => {
+      mock.calls.push({ method: "setPioneerAppMetadata", args: [params] })
+    }),
     logAuthEvent: vi.fn(async () => undefined),
   }
 }

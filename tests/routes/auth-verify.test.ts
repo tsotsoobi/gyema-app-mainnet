@@ -57,6 +57,20 @@ describe("POST /api/auth/verify", () => {
     expect(body.session.access_token).toBe("access-token-value")
   })
 
+  it("stamps app_metadata before minting the session", async () => {
+    const res = await POST(
+      postJson("http://localhost/api/auth/verify", { accessToken: "good-pi-token" }) as never
+    )
+    expect(res.status).toBe(200)
+    const stamp = mock.calls.find((c) => c.method === "setPioneerAppMetadata")
+    expect(stamp).toBeDefined()
+    expect(stamp?.args[0]).toMatchObject({
+      supabase_user_id: "sb-user-1",
+      pi_uid: "pi-uid-1",
+      pi_username: "pioneer_one",
+    })
+  })
+
   it("answers GET with 405", async () => {
     const res = await GET()
     expect(res.status).toBe(405)

@@ -36,6 +36,7 @@ import {
   findOrCreatePioneerUser,
   generatePioneerSession,
   logAuthEvent,
+  setPioneerAppMetadata,
 } from "@/lib/supabase-admin"
 
 // Force Node.js runtime — required for crypto.
@@ -199,6 +200,47 @@ export async function POST(req: NextRequest) {
         }
       : undefined,
   }))
+
+  // 4b. Stamp the Pi identity into app_metadata, BEFORE the session is
+  // generated so the token carries the claim.
+  //
+  // app_metadata is writable only with the service_role key. user_metadata,
+  // where pi_uid used to live, is writable by the user themselves with
+  // supabase.auth.updateUser, so every check that read it was reading a value
+  // the caller chose. Routes and RLS policies now read app_metadata.
+  //
+  // Fatal on failure, deliberately: a session minted without the claim is one
+  // that cannot read its owner's own listings, and a Pioneer would rather be
+  // told to try again than be signed in to an app that behaves as though they
+  // own nothing.
+  try {
+    await setPioneerAppMetadata({
+      supabase_user_id: supabaseUserId,
+      pi_uid: canonicalPiUid,
+      pi_username: piUser.username,
+    })
+  } catch (error) {
+    const elapsed = Date.now() - startedAt
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error("[auth/verify] app_metadata write failed", {
+      supabase_user_id: shortId(supabaseUserId),
+      error: errorMessage,
+      ms: elapsed,
+    })
+    waitUntil(logAuthEvent({
+      event_type: "failed_provisioning",
+      pi_uid_prefix: shortId(canonicalPiUid),
+      supabase_user_id_prefix: shortId(supabaseUserId),
+      pi_username: piUser.username,
+      error_message: errorMessage,
+      elapsed_ms: elapsed,
+    }))
+    return jsonError(
+      "PROVISIONING_ERROR",
+      "Could not set up your Gyema account — please try again or contact support",
+      500
+    )
+  }
 
   // 5. Generate a Supabase session for the Pioneer.
   //

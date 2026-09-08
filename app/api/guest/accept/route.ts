@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
+import { resolveCaller } from "@/lib/route-auth"
 import { mintDeliveryCode, hashDeliveryCode } from "@/lib/delivery-code"
 
 // Server-side guest job claim, mirroring /api/listings/accept. Verify the
@@ -44,23 +45,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, reason: "bad_request" }, { status: 400 })
     }
     const admin = createAdminClient()
-    const { data: userData, error: userErr } = await admin.auth.getUser(accessToken)
-    if (userErr || !userData?.user) {
+    const caller = await resolveCaller(admin, accessToken)
+    if (!caller) {
       return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 })
-    }
-    const meta = (userData.user.user_metadata ?? {}) as {
-      pi_uid?: string
-      pi_username?: string
-    }
-    if (!meta.pi_uid || !meta.pi_username) {
-      return NextResponse.json({ ok: false, reason: "no_identity" }, { status: 401 })
     }
     const deliveryCode = mintDeliveryCode()
     const { data, error } = await admin
       .from("guest_jobs")
       .update({
         status: "accepted",
-        assigned_courier: meta.pi_username,
+        assigned_courier: caller.pi_username,
         assigned_courier_whatsapp: accepterWhatsapp ?? null,
         delivery_code_hash: hashDeliveryCode(deliveryCode),
         updated_at: new Date().toISOString(),

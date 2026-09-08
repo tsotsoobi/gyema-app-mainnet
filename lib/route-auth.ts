@@ -35,7 +35,26 @@ export async function resolveCaller(
   const { data, error } = await admin.auth.getUser(accessToken)
   if (error || !data?.user) return null
 
-  const meta = (data.user.user_metadata ?? {}) as {
+  // app_metadata, NOT user_metadata.
+  //
+  // user_metadata is the user's own metadata: a signed in client writes it
+  // with supabase.auth.updateUser({ data: { ... } }) holding nothing but the
+  // anon key and their own session. pi_uid lived there, and pi_uid is what
+  // every route and every RLS policy decides ownership with, so a Pioneer
+  // could set theirs to somebody else's and become them for every check that
+  // read it: claim their listings, cancel their deliveries, read their
+  // counterparty's phone number.
+  //
+  // app_metadata is writable only with the service_role key. /api/auth/verify
+  // stamps it on every sign in, before the session is minted, so the token
+  // carries the claim.
+  //
+  // THERE IS NO FALLBACK TO user_metadata, deliberately. A fallback would be
+  // the same forgeable value one branch away, and anyone who wanted it would
+  // simply arrange for app_metadata to be absent. A Pioneer whose account
+  // predates the backfill gets a 401 here and a working session the moment
+  // they sign in again. See scripts/backfill-app-metadata.mjs.
+  const meta = (data.user.app_metadata ?? {}) as {
     pi_uid?: string
     pi_username?: string
   }

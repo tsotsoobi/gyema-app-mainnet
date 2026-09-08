@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "backfill:app-metadata": "node scripts/backfill-app-metadata.mjs",
     "build": "next build",
     "dev": "next dev",
     "dispatch": "node scripts/dispatch-reader.mjs",

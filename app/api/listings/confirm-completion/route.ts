@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
+import { resolveCaller } from "@/lib/route-auth"
 
 // Server-side completion confirmation. One party stamps their own side of a
 // delivery; the delivery closes when both stamps are in.
@@ -56,19 +57,12 @@ export async function POST(request: NextRequest) {
     // Verify the caller from their Supabase session token. Never trust a
     // client-supplied uid — this is the identity the whole attestation rests
     // on. Same derivation as the accept and release routes; pi_uid lives in
-    // user_metadata, written there by /api/auth/verify.
-    const { data: userData, error: userErr } =
-      await admin.auth.getUser(accessToken)
-    if (userErr || !userData?.user) {
+    // app_metadata, written there by /api/auth/verify with the service_role
+    // key. Never user_metadata, which the user can write themselves.
+    const caller = await resolveCaller(admin, accessToken)
+    if (!caller) {
       return NextResponse.json(
         { ok: false, reason: "unauthorized" },
-        { status: 401 },
-      )
-    }
-    const meta = (userData.user.user_metadata ?? {}) as { pi_uid?: string }
-    if (!meta.pi_uid) {
-      return NextResponse.json(
-        { ok: false, reason: "no_identity" },
         { status: 401 },
       )
     }
@@ -78,7 +72,7 @@ export async function POST(request: NextRequest) {
     // no row at all otherwise.
     const { data, error } = await admin.rpc("listing_confirm_completion", {
       p_listing_id: listingId,
-      p_pi_uid: meta.pi_uid,
+      p_pi_uid: caller.pi_uid,
     })
 
     if (error) {

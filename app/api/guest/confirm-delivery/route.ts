@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
+import { resolveCaller } from "@/lib/route-auth"
 import { hashDeliveryCode, hashesMatch } from "@/lib/delivery-code"
 import { STAMP_SENDER, STAMP_COURIER_CODE, hasStamp } from "@/lib/delivery-stamps"
 export const runtime = "nodejs"
@@ -108,15 +109,11 @@ export async function POST(req: NextRequest) {
     if (!body.accessToken) {
       return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 })
     }
-    const { data: userData, error: userErr } = await admin.auth.getUser(body.accessToken)
-    if (userErr || !userData?.user) {
+    const caller = await resolveCaller(admin, body.accessToken)
+    if (!caller) {
       return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 })
     }
-    const meta = (userData.user.user_metadata ?? {}) as { pi_username?: string }
-    if (!meta.pi_username) {
-      return NextResponse.json({ ok: false, reason: "no_identity" }, { status: 401 })
-    }
-    if (!data.assigned_courier || data.assigned_courier !== meta.pi_username) {
+    if (!data.assigned_courier || data.assigned_courier !== caller.pi_username) {
       return NextResponse.json({ ok: false, reason: "not_assigned" }, { status: 403 })
     }
 

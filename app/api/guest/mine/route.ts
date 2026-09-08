@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
+import { resolveCaller } from "@/lib/route-auth"
 
 // The courier's own accepted guest jobs. Before this route the accept sheet
 // was the only view of a claimed job, so the job vanished when the sheet
@@ -89,24 +90,15 @@ export async function POST(request: NextRequest) {
 
     // Identity is derived here, server-side, from the session token alone.
     // The request body carries nothing but the token: no username, no uid.
-    const { data: userData, error: userErr } = await admin.auth.getUser(accessToken)
-    if (userErr || !userData?.user) {
-      return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 })
-    }
-    const meta = (userData.user.user_metadata ?? {}) as {
-      pi_uid?: string
-      pi_username?: string
-    }
-    // Only pi_username is required. /api/guest/accept also needs pi_uid
-    // because it writes; this route just matches, so it has no use for it.
-    //
-    // pi_username is the right match key, not pi_uid: Pi's authenticate()
+    // pi_username is the right match key here, not pi_uid: Pi's authenticate()
     // returns different pi_uids for the same Pioneer across sessions on
-    // Testnet (see lib/supabase-admin.ts), so a uid match would lose a
-    // courier their jobs on the next sign-in — exactly the case this
-    // surface exists to survive.
-    if (!meta.pi_username) {
-      return NextResponse.json({ ok: false, reason: "no_identity" }, { status: 401 })
+    // Testnet (see lib/supabase-admin.ts), so a uid match would lose a courier
+    // their jobs on the next sign-in, which is exactly the case this surface
+    // exists to survive. Both values come from app_metadata, so neither is
+    // something the caller could have chosen.
+    const caller = await resolveCaller(admin, accessToken)
+    if (!caller) {
+      return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 })
     }
 
     // Assignment is the ONLY filter. No status filter, so a job stays
@@ -114,7 +106,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await admin
       .from("guest_jobs")
       .select(COURIER_JOB_COLUMNS)
-      .eq("assigned_courier", meta.pi_username)
+      .eq("assigned_courier", caller.pi_username)
       .order("created_at", { ascending: false })
       .limit(20)
 

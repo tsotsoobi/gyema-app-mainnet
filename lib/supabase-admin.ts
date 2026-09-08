@@ -301,6 +301,51 @@ function derivePioneerPassword(piUid: string): string {
   return createHmac("sha256", salt).update(`${piUid}.gyema-v2`).digest("hex")
 }
 
+/**
+ * Write the Pioneer's identity into app_metadata.
+ *
+ * WHY THIS EXISTS, AND WHY user_metadata IS NOT ENOUGH.
+ *
+ * user_metadata is the user's own metadata. A signed in client can write it
+ * with supabase.auth.updateUser({ data: { ... } }) holding nothing but the
+ * anon key and their own session. Anything read from there is a value the
+ * caller chose, which makes it fine for a display name and useless as an
+ * identity.
+ *
+ * pi_uid was living there, and it is the key every route and every RLS policy
+ * decides ownership with. A Pioneer could set their own pi_uid to somebody
+ * else's and become them for every check that read it.
+ *
+ * app_metadata is written only with the service_role key. A client cannot
+ * touch it at any price, and it rides in the JWT the same way, so policies can
+ * read it as auth.jwt() -> 'app_metadata' ->> 'pi_uid'.
+ *
+ * Called on every sign in, before the session is generated, so the token the
+ * Pioneer walks away with carries the claim. Idempotent: writing the same
+ * values again is a no-op as far as anything downstream is concerned.
+ *
+ * Throws on failure. The caller decides whether that is fatal; /api/auth/verify
+ * treats it as fatal, because a session minted without the claim is a session
+ * that cannot read its owner's own listings.
+ */
+export async function setPioneerAppMetadata(params: {
+  supabase_user_id: string
+  pi_uid: string
+  pi_username: string
+}): Promise<void> {
+  const admin = createAdminClient()
+  const { error } = await admin.auth.admin.updateUserById(params.supabase_user_id, {
+    app_metadata: {
+      pi_uid: params.pi_uid,
+      pi_username: params.pi_username,
+      provider: "pi-network",
+    },
+  })
+  if (error) {
+    throw new Error(`[supabase-admin] app_metadata write failed: ${error.message}`)
+  }
+}
+
 // ============================================================================
 // Auth observability
 // ============================================================================
