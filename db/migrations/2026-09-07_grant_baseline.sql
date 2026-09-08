@@ -113,6 +113,71 @@ $$;
 
 
 -- ---------------------------------------------------------------------------
+-- 1a. Make the NEXT object start denied too
+--
+-- FOUND LIVE ON TESTNET, 7 September. Section 1 revokes the Supabase defaults
+-- from every relation that exists when it runs. It says nothing about the next
+-- one. The two dispatch views in
+-- db/migrations/2026-09-07_dispatch_reader_masked_view.sql are created after
+-- this file, so they were born with anon and authenticated holding everything
+-- on them, and the catalog check caught it after the fact.
+--
+-- A Supabase project ships with default privileges that grant anon and
+-- authenticated on tables created in schema public. ALTER DEFAULT PRIVILEGES
+-- rewrites that rule, so an object created later starts with nobody on it and
+-- has to be granted deliberately. That is the posture this whole file is
+-- arguing for, applied to the future rather than only the present.
+--
+-- FOR ROLE postgres: default privileges are per creating role, not global.
+-- postgres is what the SQL editor and the dashboard create objects as, which
+-- covers every object either of us will make. If something is created by
+-- another role its own defaults apply, which is why verification (i) below
+-- lists every role that has defaults rather than checking only this one.
+--
+-- FUNCTIONS ARE NOT COVERED HERE, AND THAT IS A MEASUREMENT, NOT AN OVERSIGHT.
+--
+-- EXECUTE on a new function defaults to PUBLIC rather than to anon, so the
+-- obvious statement to write is:
+--
+--   alter default privileges for role postgres in schema public
+--     revoke all on functions from public;
+--
+-- On PostgreSQL 17 that statement succeeds, records nothing in pg_default_acl,
+-- and changes nothing: a function created afterwards still has a null proacl,
+-- which means EXECUTE to PUBLIC, and has_function_privilege('anon', fn,
+-- 'execute') still returns true. Measured on 7 September against postgres
+-- 17-alpine, three ways (revoke all on functions, revoke execute on functions,
+-- revoke execute on routines), before writing this paragraph. The tables and
+-- sequences statements above were measured the same way and DO work.
+--
+-- So a new function is still callable through PostgREST with the public key
+-- the moment it is created. That is the shape of the rls_auto_enable finding
+-- on Mainnet, and the control for it is not a default: it is the explicit
+-- revoke and grant that every function in db/migrations already carries, per
+-- CLAUDE.md invariant 2. Write them on the same day you write the function:
+--
+--   revoke all on function public.your_function(args) from public, anon, authenticated;
+--   grant execute on function public.your_function(args) to service_role;
+--
+-- docs/catalog-checks.sql check 12 is the net that catches a miss: it lists
+-- every security definer function in public that PUBLIC can execute, and the
+-- expected answer is zero rows.
+--
+-- WHAT THIS WILL DO TO YOU LATER, so it is not a surprise: create a table in
+-- the dashboard and the app cannot read it until you grant it. That is the
+-- intended outcome, and it is the difference between a new object being
+-- exposed by default and being deliberately opened.
+--
+-- Safe to re-run: ALTER DEFAULT PRIVILEGES is declarative, not incremental.
+-- ---------------------------------------------------------------------------
+alter default privileges for role postgres in schema public
+  revoke all on tables from anon, authenticated;
+
+alter default privileges for role postgres in schema public
+  revoke all on sequences from anon, authenticated;
+
+
+-- ---------------------------------------------------------------------------
 -- 2. anon: column level SELECT on listings, phones excluded
 --
 -- This is the S-1 fix. The open listings feed and the public track lookup both
@@ -519,6 +584,55 @@ $$;
 --      where table_schema = 'public'
 --        and table_name in ('couriers', 'a2u_payments', 'legacy_couriers')
 --        and grantee in ('anon', 'authenticated');
+--
+-- (i) DEFAULT PRIVILEGES. What a newly created object will start with.
+--
+--     select pg_get_userbyid(defaclrole) as creating_role,
+--            n.nspname                   as schema,
+--            case defaclobjtype when 'r' then 'tables'
+--                               when 'S' then 'sequences'
+--                               when 'f' then 'functions'
+--                               when 'T' then 'types'
+--                               else defaclobjtype::text end as object_type,
+--            defaclacl                   as default_acl
+--       from pg_default_acl d
+--       join pg_namespace n on n.oid = d.defaclnamespace
+--      order by creating_role, schema, object_type;
+--
+--     Read it for the postgres row in schema public: no anon and no
+--     authenticated on tables or sequences. There will be no functions row,
+--     for the reason given in section 1a.
+--
+--     Read it also for any OTHER creating role that appears. Defaults are per
+--     role: a role not listed here still carries the built in defaults, which
+--     for functions means EXECUTE to PUBLIC. If objects are ever created as
+--     something other than postgres, that role needs the same three statements.
+--
+-- (j) The proof, which takes ten seconds and is worth more than reading an
+--     ACL. In the SQL editor, on the network you just applied to:
+--
+--     create table public.zzz_default_privilege_probe (id int);
+--     select grantee, privilege_type
+--       from information_schema.role_table_grants
+--      where table_schema = 'public'
+--        and table_name = 'zzz_default_privilege_probe'
+--        and grantee in ('anon', 'authenticated');
+--     drop table public.zzz_default_privilege_probe;
+--
+--     Expect zero rows in the middle statement. Before section 1a, that same
+--     probe returns anon and authenticated holding everything, which is how
+--     the two dispatch views ended up readable with the public key.
+--
+--     The same probe for a function, which is expected to show the opposite
+--     and is here so the gap is visible rather than assumed:
+--
+--     create function public.zzz_probe() returns int language sql as 'select 1';
+--     select has_function_privilege('anon', 'public.zzz_probe()', 'execute');
+--     drop function public.zzz_probe();
+--
+--     Expect TRUE. A new function is executable by the public key until it is
+--     explicitly revoked. That is why every function in db/migrations carries
+--     its own revoke and grant.
 --
 -- (h) The one behavioural check that needs the app, not the catalog: sign in
 --     on the network you just applied to, inside Pi Browser, open a matched

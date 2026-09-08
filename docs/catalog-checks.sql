@@ -246,8 +246,10 @@ check_07_function_acls as (
     where n.nspname = 'public'
       and p.proname in (
         'guest_bump_delivery_code_attempts',
+        'guest_bump_last4_attempts',
         'guest_stamp_delivery',
         'listing_confirm_completion',
+        'listing_counterpart_contact',
         'mask_phone_head_only'
       )
   ) s
@@ -296,10 +298,11 @@ check_09_migration_objects as (
         ('2026-08-14', 'function listing_confirm_completion',
           exists (select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
                    where n.nspname='public' and p.proname='listing_confirm_completion')),
-        ('2026-08-14', 'policy on listings for posters and matched parties',
+        ('2026-08-14', 'listings UPDATE policy for the two parties (renamed listings_update_parties by the identity migration)',
           exists (select 1 from pg_policies
                    where schemaname='public' and tablename='listings'
-                     and policyname ilike '%matched parties%')),
+                     and (policyname = 'listings_update_parties'
+                       or policyname ilike '%matched parties%'))),
         ('2026-08-18', 'role gyema_reader',
           exists (select 1 from pg_roles where rolname='gyema_reader')),
         ('2026-08-18', 'policy gyema_reader_select on guest_jobs (superseded)',
@@ -324,7 +327,35 @@ check_09_migration_objects as (
                        where grantee='gyema_reader' and table_name='guest_jobs')),
         ('2026-09-07', 'gyema_reader holds nothing on base table listings',
           not exists (select 1 from information_schema.role_table_grants
-                       where grantee='gyema_reader' and table_name='listings'))
+                       where grantee='gyema_reader' and table_name='listings')),
+        ('2026-09-07', 'neither dispatch view is readable by anon or authenticated',
+          not exists (select 1 from information_schema.role_table_grants
+                       where table_schema='public'
+                         and table_name in ('guest_jobs_dispatch','listings_dispatch')
+                         and grantee in ('anon','authenticated','PUBLIC'))),
+        ('2026-09-07 identity', 'the four listings policies reading app_metadata',
+          (select count(*) = 4 from pg_policies
+            where schemaname='public' and tablename='listings'
+              and policyname in ('listings_select_public','listings_insert_own',
+                                 'listings_update_parties','listings_delete_poster'))),
+        ('2026-09-07 identity', 'no policy in public references user_metadata',
+          not exists (select 1 from pg_policies
+                       where schemaname='public'
+                         and (coalesce(qual,'') like '%user_metadata%'
+                           or coalesce(with_check,'') like '%user_metadata%'))),
+        ('2026-09-07 last4', 'column guest_jobs.last4_attempts',
+          exists (select 1 from information_schema.columns
+                   where table_schema='public' and table_name='guest_jobs'
+                     and column_name='last4_attempts')),
+        ('2026-09-07 last4', 'function guest_bump_last4_attempts',
+          exists (select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+                   where n.nspname='public' and p.proname='guest_bump_last4_attempts')),
+        ('2026-09-07 baseline', 'default privileges deny anon and authenticated on new tables',
+          not exists (
+            select 1 from pg_default_acl d
+            join pg_namespace n on n.oid = d.defaclnamespace
+            where n.nspname = 'public' and d.defaclobjtype = 'r'
+              and array_to_string(d.defaclacl, ',') ~ '(^|,)(anon|authenticated)='))
     ) as t(m, o, present)
   ) s
 ),
@@ -385,6 +416,36 @@ check_12_public_execute as (
       and (p.proacl is null
            or array_to_string(p.proacl, ',') like '%=X/%'
               and array_to_string(p.proacl, ',') not like '%service_role=X%')
+  ) s
+),
+
+-- CHECK 12b. Default privileges: what a NEWLY created object starts with.
+--
+-- Section 1 of the grant baseline revokes from the objects that exist when it
+-- runs, and says nothing about the next one. This is the rule for the objects
+-- created afterwards. The two dispatch views were born with Supabase's
+-- defaults on them because a later migration creates them, which is the
+-- 7 September finding.
+check_12b_default_privileges as (
+  select coalesce(jsonb_agg(x order by x->>'creating_role', x->>'object_type'), '[]'::jsonb) as v
+  from (
+    select jsonb_build_object(
+      'creating_role', pg_get_userbyid(d.defaclrole),
+      'schema', n.nspname,
+      'object_type', case d.defaclobjtype when 'r' then 'tables'
+                                          when 'S' then 'sequences'
+                                          when 'f' then 'functions'
+                                          when 'T' then 'types'
+                                          else d.defaclobjtype::text end,
+      'default_acl', to_jsonb(d.defaclacl::text[]),
+      'grants_anon_or_authenticated',
+        coalesce(array_to_string(d.defaclacl, ',') ~ '(^|,)(anon|authenticated)=', false),
+      'grants_public',
+        coalesce(array_to_string(d.defaclacl, ',') ~ '(^|,)=', false)
+    ) as x
+    from pg_default_acl d
+    join pg_namespace n on n.oid = d.defaclnamespace
+    where n.nspname = 'public'
   ) s
 ),
 
@@ -456,7 +517,10 @@ select jsonb_pretty(jsonb_build_object(
       || 'gyema_reader_select is expected absent once 2026-09-07 is applied. Policies on the three '
       || 'unreferenced tables: unknown, read them.',
     'check_03_table_grants',
-      'listings to anon with SELECT. authenticated with SELECT, INSERT, DELETE but NOT UPDATE, because the '
+      'Read the two dispatch views here as well: guest_jobs_dispatch and listings_dispatch must show '
+      || 'gyema_reader and nothing else. They are created after the grant baseline runs, so on 7 September '
+      || 'they were found on Testnet holding Supabase default grants for anon and authenticated. '
+      || 'listings to anon with SELECT. authenticated with SELECT, INSERT, DELETE but NOT UPDATE, because the '
       || '2026-08-14 migration dropped the table wide UPDATE and re-granted per column. guest_jobs expected to '
       || 'show nothing for anon or authenticated: the guest rail is service_role only, and any row there is a '
       || 'finding. gyema_reader expected on the two dispatch views only.',
@@ -502,6 +566,15 @@ select jsonb_pretty(jsonb_build_object(
     'check_12_public_execute',
       'Zero rows. Any security definer function in public that PUBLIC can execute is reachable through '
       || 'PostgREST with the anon key, whoever wrote it and whenever.',
+    'check_12b_default_privileges',
+      'One row per creating role and object type with default privileges in schema public. For the postgres '
+      || 'row: grants_anon_or_authenticated false on tables and sequences. There will be NO functions row, '
+      || 'and that is expected: ALTER DEFAULT PRIVILEGES cannot take EXECUTE away from PUBLIC for future '
+      || 'functions on PostgreSQL 17 (measured, see section 1a of the grant baseline), so a new function is '
+      || 'callable with the public key until it is explicitly revoked. check_12_public_execute is the net for '
+      || 'that and its expected answer is zero rows. A creating role that does not appear here at all still '
+      || 'carries the built in defaults, so if objects are ever created as something other than postgres, that '
+      || 'role needs the same two statements.',
     'check_13_unreferenced_tables',
       'a2u_payments, couriers and legacy_couriers, one row each whether or not the table exists (exists false '
       || 'on a network that does not have it is itself an answer). For each: is RLS on, who holds grants, and what the '
@@ -525,6 +598,7 @@ select jsonb_pretty(jsonb_build_object(
   'check_10_reader_role',           (select v from check_10_reader_role),
   'check_11_inventory',             (select v from check_11_inventory),
   'check_12_public_execute',        (select v from check_12_public_execute),
+  'check_12b_default_privileges',   (select v from check_12b_default_privileges),
   'check_13_unreferenced_tables',   (select v from check_13_unreferenced_tables)
 )) as gyema_catalog_checks;
 

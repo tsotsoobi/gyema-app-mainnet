@@ -84,6 +84,23 @@ describe("mask_phone_head_only, the deployed function text", () => {
     expect(sql).toContain("grant select on public.guest_jobs_dispatch to gyema_reader")
   })
 
+  it("takes the Supabase defaults off both views in the file that creates them", () => {
+    // Found live on Testnet, 7 September: the views are created after the
+    // grant baseline has revoked the defaults from everything else, so they
+    // were born with anon and authenticated holding everything on them. PUBLIC
+    // is named too, because a grant to PUBLIC is inherited by anon and
+    // revoking from anon alone leaves it in place.
+    expect(sql).toContain(
+      "revoke all on public.guest_jobs_dispatch from anon, authenticated, public;"
+    )
+    expect(sql).toContain(
+      "revoke all on public.listings_dispatch   from anon, authenticated, public;"
+    )
+    // And they come before the grant to the reader, not after it.
+    expect(sql.indexOf("revoke all on public.guest_jobs_dispatch from anon"))
+      .toBeLessThan(sql.indexOf("grant select on public.guest_jobs_dispatch to gyema_reader"))
+  })
+
   it("bounds the role and caps the rows", () => {
     expect(sql).toContain("alter role gyema_reader set statement_timeout = '10s'")
     expect(sql).toContain("alter role gyema_reader set idle_in_transaction_session_timeout = '30s'")

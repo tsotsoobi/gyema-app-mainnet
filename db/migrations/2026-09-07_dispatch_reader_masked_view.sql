@@ -52,6 +52,12 @@
 -- result of each before moving on: the Supabase SQL editor does not preserve
 -- transaction state across executions.
 --
+-- AMENDED 7 September: section 5a revokes the Supabase default grants from
+-- both views. They are created after the grant baseline has run, so they were
+-- born with anon and authenticated holding everything on them. Caught in the
+-- catalog check after this file was applied to Testnet, and revoked there by
+-- hand at the time.
+--
 -- WHAT DEPENDS ON IT
 --
 -- scripts/dispatch-reader.mjs, which after the matching commit selects from
@@ -281,6 +287,37 @@ comment on view public.listings_dispatch is
 
 
 -- ---------------------------------------------------------------------------
+-- 5a. Take the Supabase defaults off both views, immediately
+--
+-- FOUND LIVE ON TESTNET, 7 September, after this file was applied. A Supabase
+-- project carries default privileges that grant anon and authenticated
+-- everything on tables and views created in schema public. The grant baseline
+-- (2026-09-07_grant_baseline.sql section 1) revokes those, but it revokes them
+-- from the objects that exist AT THE TIME IT RUNS. These two views are created
+-- afterwards, by this file, so they were born with the default grants and the
+-- baseline had already been and gone.
+--
+-- The effect was that anon could read both dispatch views with the public key.
+-- guest_jobs_dispatch carries route, quote, courier assignment and confirmation
+-- timestamps for every guest job. The masking held (the phone columns are head
+-- masked inside the view and the raw ones are unreachable) but that is the
+-- second line, not the first.
+--
+-- So: revoked here, in the same file that creates them, three lines after the
+-- create. PUBLIC is named alongside anon and authenticated because a grant to
+-- PUBLIC is inherited by every role including anon, and revoking from anon
+-- alone leaves it in place.
+--
+-- The grant baseline now also sets ALTER DEFAULT PRIVILEGES so that objects
+-- created later start denied rather than needing to be caught like this. These
+-- two revokes stay anyway: a file that creates an object should not depend on
+-- another file having been run first to make it safe.
+-- ---------------------------------------------------------------------------
+revoke all on public.guest_jobs_dispatch from anon, authenticated, public;
+revoke all on public.listings_dispatch   from anon, authenticated, public;
+
+
+-- ---------------------------------------------------------------------------
 -- 6. Pin security_invoker off explicitly, where the server supports it
 --
 -- Off is the default, so this changes nothing today. It is written down
@@ -381,7 +418,34 @@ grant select on public.listings_dispatch   to gyema_reader;
 --
 --     select count(*) from public.guest_jobs_dispatch;
 --
--- (f) The old policies are gone. Expect zero rows.
+-- (f2) NEITHER VIEW IS READABLE BY THE PUBLIC KEY. Expect ZERO rows.
+--
+--     This is the check that would have caught the 7 September finding: the
+--     views inherited Supabase's default grants because they are created after
+--     the grant baseline has already revoked them from everything else.
+--
+--     select grantee, table_name, privilege_type
+--       from information_schema.role_table_grants
+--      where table_schema = 'public'
+--        and table_name in ('guest_jobs_dispatch', 'listings_dispatch')
+--        and grantee in ('anon', 'authenticated', 'PUBLIC');
+--
+--     And from the catalog, which does not filter by role membership:
+--
+--     select c.relname,
+--            case when a.grantee = 0 then 'PUBLIC'
+--                 else pg_get_userbyid(a.grantee) end as grantee,
+--            a.privilege_type
+--       from pg_class c
+--       join pg_namespace n on n.oid = c.relnamespace
+--       cross join lateral aclexplode(c.relacl) a
+--      where n.nspname = 'public'
+--        and c.relname in ('guest_jobs_dispatch', 'listings_dispatch')
+--      order by c.relname, grantee;
+--
+--     Expect gyema_reader with SELECT, plus the owner. Nothing else.
+--
+-- (g) The old policies are gone. Expect zero rows.
 --
 --     select tablename, policyname
 --       from pg_policies
