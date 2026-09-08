@@ -46,9 +46,14 @@
 // No secret lives in this repo. The connection string is read from the
 // environment variable GYEMA_READER_DATABASE_URL, which belongs in a
 // gitignored .env.local or in the shell, and which authenticates as
-// gyema_reader: SELECT on 22 named guest_jobs columns and 8 named listings
-// columns, and nothing else. delivery_code_hash is deliberately not among
-// them, so this script cannot read it even by mistake.
+// gyema_reader: SELECT on public.guest_jobs_dispatch and
+// public.listings_dispatch, and nothing else. Not on the base tables, so
+// delivery_code_hash, the raw phone columns and the remit_* settlement
+// columns are unreachable from here even by mistake.
+//
+// GYEMA_READER_CA_CERT is also required, and is the path to the project CA
+// certificate. The connection is refused without it: see the TLS block in
+// main(). The CA is per project and the two networks do not share one.
 //
 // Take the Session pooler URI from the Supabase dashboard under Connect (the
 // direct db.<ref>.supabase.co host is IPv6 only on current projects), then
@@ -1311,25 +1316,59 @@ async function main() {
     console.error("")
     console.error("  Set it to the Session pooler URI from the Supabase dashboard under")
     console.error("  Connect, with the user swapped to gyema_reader.<project_ref> and the")
-    console.error("  password generated when db/migrations/2026-08-18_dispatch_reader_role.sql")
-    console.error("  was applied. Keep it in a gitignored .env.local or in the shell.")
+    console.error("  password set by hand when the gyema_reader role was created. Keep it")
+    console.error("  in a gitignored .env.local or in the shell.")
     console.error("")
     process.exit(1)
   }
 
   const target = describeTarget(rawUrl)
 
-  // TLS. Without a CA the connection is encrypted but the server certificate
-  // is not verified, which defends against eavesdropping and not against an
-  // active man in the middle. Point GYEMA_READER_CA_CERT at the Supabase CA
-  // PEM to upgrade to full verification without editing this file.
+  // TLS, verified or not at all.
+  //
+  // GYEMA_READER_CA_CERT is REQUIRED. There is no unverified fallback: an
+  // encrypted connection whose certificate nobody checks defends against
+  // eavesdropping and not against an active man in the middle, and this
+  // session carries a credential that can read every guest job on a live
+  // project. Refusing to connect is the correct answer to a missing CA, not
+  // connecting anyway with rejectUnauthorized false.
+  //
+  // Download the CA once from the Supabase dashboard under Connect, keep it
+  // outside the repository, and point this variable at it.
   const caPath = process.env.GYEMA_READER_CA_CERT
-  let ssl
-  if (caPath) {
-    ssl = { ca: readFileSync(caPath, "utf8"), rejectUnauthorized: true }
-  } else {
-    ssl = { rejectUnauthorized: false }
+  if (!caPath) {
+    console.error("")
+    console.error("[dispatch-reader] GYEMA_READER_CA_CERT is not set.")
+    console.error("")
+    console.error("  This script will not open an unverified TLS connection. Download the")
+    console.error("  project CA certificate from the Supabase dashboard under Connect, save")
+    console.error("  it outside this repository, and set GYEMA_READER_CA_CERT to its path.")
+    console.error("")
+    console.error("  The CA is per project: the Testnet and Mainnet certificates are not")
+    console.error("  interchangeable, and pointing at the wrong one fails the handshake")
+    console.error("  rather than connecting to the wrong database.")
+    console.error("")
+    process.exit(1)
   }
+
+  let ca
+  try {
+    ca = readFileSync(caPath, "utf8")
+  } catch (err) {
+    console.error("")
+    console.error(`[dispatch-reader] could not read GYEMA_READER_CA_CERT at ${caPath}`)
+    console.error(`[dispatch-reader] ${err.message}`)
+    console.error("")
+    process.exit(1)
+  }
+  if (!ca.includes("BEGIN CERTIFICATE")) {
+    console.error("")
+    console.error(`[dispatch-reader] ${caPath} does not look like a PEM certificate.`)
+    console.error("  Expected a file containing a BEGIN CERTIFICATE block.")
+    console.error("")
+    process.exit(1)
+  }
+  const ssl = { ca, rejectUnauthorized: true }
 
   const client = new Client({ connectionString: rawUrl, ssl, application_name: "gyema-dispatch-reader" })
 
