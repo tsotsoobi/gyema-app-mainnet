@@ -1,6 +1,6 @@
 import { getAnonClient, getAuthedClient } from "./supabase"
 import { getSupabaseSession } from "./pi-network"
-import type { Listing, PackageSize } from "./listings"
+import type { Listing, ListingStatus, PackageSize } from "./listings"
 
 // Database row shape (snake_case, as stored in Supabase)
 type ListingRow = {
@@ -10,7 +10,6 @@ type ListingRow = {
   to_city: string
   posted_by_id: string
   posted_by_username: string
-  whatsapp: string
   status: "open" | "expired" | "matched" | "in_transit" | "completed"
   tracking_id: string
   created_at: string
@@ -27,7 +26,6 @@ type ListingRow = {
   // v2 — Accept / Mark Complete
   matched_with_user_id: string | null
   matched_with_username: string | null
-  matched_with_whatsapp: string | null
   matched_at: string | null
   sender_confirmed: boolean
   traveller_confirmed: boolean
@@ -43,7 +41,6 @@ function fromRow(row: ListingRow): Listing {
     trackingId: row.tracking_id,
     postedById: row.posted_by_id,
     postedByUsername: row.posted_by_username,
-    whatsapp: row.whatsapp,
     status: row.status,
     fromCity: row.from_city,
     toCity: row.to_city,
@@ -51,7 +48,6 @@ function fromRow(row: ListingRow): Listing {
     // v2 fields surface as nullable values from the DB
     matchedWithUserId: row.matched_with_user_id,
     matchedWithUsername: row.matched_with_username,
-    matchedWithWhatsapp: row.matched_with_whatsapp,
     matchedAt: row.matched_at,
     senderConfirmed: row.sender_confirmed,
     travellerConfirmed: row.traveller_confirmed,
@@ -80,12 +76,63 @@ function fromRow(row: ListingRow): Listing {
 }
 
 // ---- Read paths ----
+//
+// EVERY read names its columns. select("*") is not available any more and
+// that is deliberate on both sides of the boundary:
+//
+//   In the database, db/migrations/2026-09-07_grant_baseline.sql gives anon
+//   and authenticated column level SELECT on listings with whatsapp and
+//   matched_with_whatsapp excluded, so select("*") is answered with 42501
+//   rather than with a phone number. The grant is the control; this list is
+//   how the app stays inside it.
+//
+//   In the app, a column list is the payload contract written where a reviewer
+//   can see it. The guest rail has done this since it was built (see the
+//   header of app/api/guest/mine/route.ts); the Pioneer rail was still on
+//   select("*"), which is finding S-1.
+//
+// The two phone columns are not here and must not be added. A matched party
+// gets the other party's number from getCounterpartContactAsync below, which
+// goes through an RPC that checks who is asking. Adding either column here
+// would fail at the database anyway, which is the point.
+// supabase-js can only infer a row shape from a string LITERAL passed to
+// .select(); given a joined constant it falls back to GenericStringError, so
+// every call site casts through unknown. Same trade the guest routes made for
+// the same reason (app/api/guest/mine/route.ts). Keep ListingRow in sync with
+// this list by hand.
+const LISTING_COLUMNS = [
+  "id",
+  "kind",
+  "from_city",
+  "to_city",
+  "posted_by_id",
+  "posted_by_username",
+  "status",
+  "tracking_id",
+  "created_at",
+  "travel_date",
+  "capacity",
+  "price_pi",
+  "notes",
+  "deliver_by",
+  "size",
+  "description",
+  "offer_pi",
+  "matched_with_user_id",
+  "matched_with_username",
+  "matched_at",
+  "sender_confirmed",
+  "traveller_confirmed",
+  "completed_at",
+  "archived_at",
+  "archived_by_matched_at",
+].join(", ")
 
 // Public read — anyone can browse the open listings feed.
 export async function getOpenListingsAsync(): Promise<Listing[]> {
   const { data, error } = await getAnonClient()
     .from("listings")
-    .select("*")
+    .select(LISTING_COLUMNS)
     .eq("status", "open")
     .order("created_at", { ascending: false })
 
@@ -94,7 +141,7 @@ export async function getOpenListingsAsync(): Promise<Listing[]> {
     return []
   }
 
-  return (data as ListingRow[]).map(fromRow)
+  return (data as unknown as ListingRow[]).map(fromRow)
 }
 
 // User-scoped read — returns listings the user posted or was matched into.
@@ -102,9 +149,19 @@ export async function getOpenListingsAsync(): Promise<Listing[]> {
 export async function getListingsByUserAsync(userId: string): Promise<Listing[]> {
   // Return both: listings the user posted, AND listings where the user
   // accepted (matched_with_user_id). Either makes the listing "theirs".
+  // The uid is interpolated into a PostgREST filter string, where a comma, a
+  // dot or a paren is structure rather than data: a crafted value would change
+  // the shape of the filter instead of the value being compared (S-18). Pi uids
+  // are alphanumeric, so anything else is refused before the query is built
+  // rather than escaped, which PostgREST gives no way to do reliably.
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(userId)) {
+    console.error("getListingsByUserAsync: uid failed the filter safety check")
+    return []
+  }
+
   const { data, error } = await getAuthedClient()
     .from("listings")
-    .select("*")
+    .select(LISTING_COLUMNS)
     .or(`posted_by_id.eq.${userId},matched_with_user_id.eq.${userId}`)
     .order("created_at", { ascending: false })
 
@@ -116,7 +173,7 @@ export async function getListingsByUserAsync(userId: string): Promise<Listing[]>
   // Per-user archive: hide a listing only from the side that archived it.
   // Poster archived sets archived_at; matched party archived sets
   // archived_by_matched_at. The row and Track-by-ID are never affected.
-  const rows = (data as ListingRow[]).filter((r) => {
+  const rows = (data as unknown as ListingRow[]).filter((r) => {
     const hiddenForUser =
       (r.posted_by_id === userId && r.archived_at != null) ||
       (r.matched_with_user_id === userId && r.archived_by_matched_at != null)
@@ -133,7 +190,7 @@ export async function getListingByTrackingIdAsync(
 ): Promise<Listing | null> {
   const { data, error } = await getAnonClient()
     .from("listings")
-    .select("*")
+    .select(LISTING_COLUMNS)
     .eq("tracking_id", trackingId.trim().toUpperCase())
     .maybeSingle()
 
@@ -143,7 +200,115 @@ export async function getListingByTrackingIdAsync(
   }
   if (!data) return null
 
-  return fromRow(data as ListingRow)
+  return fromRow(data as unknown as ListingRow)
+}
+
+// ---- Status transitions ----
+//
+// The three transitions below are server routes, not client writes.
+//
+// They were client writes until the grant baseline
+// (db/migrations/2026-09-07_grant_baseline.sql), which took UPDATE on every
+// listings column except the two archive ones away from authenticated. A
+// browser can no longer write status, and that is the fix rather than the
+// obstacle: the listings UPDATE policy is row level and cannot see WHICH
+// column a request touches, so any client able to write status could write any
+// status on any row the policy admitted it to. Expire somebody else's open
+// listing, mark a delivery picked up that nobody collected, walk a row to
+// completed.
+//
+// Nothing on this side of the wire names a party. mark-in-transit works out
+// which side is the traveller from the listing's own kind, server side, the
+// same way completion does.
+
+type StatusTransition = "cancel-open" | "cancel-matched" | "mark-in-transit"
+
+/**
+ * POST one status transition and return the status the server ended up in.
+ *
+ * Returns null on every failure, which the callers turn into a message. The
+ * refusals are not distinguished: "not your listing", "no such listing" and
+ * "state already moved" all come back the same way, and none of them should
+ * tell an unrelated caller anything about a row.
+ */
+async function postStatusTransition(
+  transition: StatusTransition,
+  listingId: string
+): Promise<ListingStatus | null> {
+  const session = getSupabaseSession()
+  if (!session?.accessToken) {
+    console.error(`${transition}: no active Supabase session`)
+    return null
+  }
+
+  try {
+    const res = await fetch(`/api/listings/${transition}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessToken: session.accessToken, listingId }),
+    })
+    const body = (await res.json()) as {
+      ok: boolean
+      status?: ListingStatus
+      reason?: string
+    }
+    if (!res.ok || !body.ok || !body.status) {
+      console.warn(`${transition} refused:`, body.reason)
+      return null
+    }
+    return body.status
+  } catch (err) {
+    console.error(`${transition} error:`, err)
+    return null
+  }
+}
+
+// ---- Counterparty contact ----
+
+export type CounterpartContact = {
+  counterpartyRole: "poster" | "matched"
+  counterpartyUsername: string | null
+  whatsapp: string | null
+}
+
+/**
+ * The other party's WhatsApp number on one matched listing.
+ *
+ * Neither anon nor authenticated can read whatsapp or matched_with_whatsapp
+ * from the table at all after the 2026-09-07 grant baseline, so this RPC is
+ * the only path a number reaches a client by. It is security definer, and it
+ * decides for itself who is asking: it maps auth.uid() to a pi_uid through
+ * public.pioneers and returns a row only when that pi_uid is the poster or
+ * the matched party on this listing.
+ *
+ * Returns null for every refusal, and the refusals are indistinguishable on
+ * purpose: not a party, no such listing, and not matched yet all look the
+ * same from here because they all return zero rows.
+ *
+ * Requires a signed in Pioneer. Guests have no session and anon does not hold
+ * EXECUTE on the function.
+ */
+export async function getCounterpartContactAsync(
+  listingId: string
+): Promise<CounterpartContact | null> {
+  const { data, error } = await getAuthedClient().rpc(
+    "listing_counterpart_contact",
+    { p_listing_id: listingId }
+  )
+
+  if (error) {
+    console.error("getCounterpartContactAsync error:", error.message)
+    return null
+  }
+
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row) return null
+
+  return {
+    counterpartyRole: row.counterparty_role,
+    counterpartyUsername: row.counterparty_username ?? null,
+    whatsapp: row.whatsapp ?? null,
+  }
 }
 
 // ---- Write paths ----
@@ -190,7 +355,7 @@ export async function createTripAsync(input: {
   const { data, error } = await getAuthedClient()
     .from("listings")
     .insert(row)
-    .select()
+    .select(LISTING_COLUMNS)
     .single()
 
   if (error) {
@@ -198,7 +363,7 @@ export async function createTripAsync(input: {
     return null
   }
 
-  return fromRow(data as ListingRow)
+  return fromRow(data as unknown as ListingRow)
 }
 
 export async function createPackageAsync(input: {
@@ -236,7 +401,7 @@ export async function createPackageAsync(input: {
   const { data, error } = await getAuthedClient()
     .from("listings")
     .insert(row)
-    .select()
+    .select(LISTING_COLUMNS)
     .single()
 
   if (error) {
@@ -244,7 +409,7 @@ export async function createPackageAsync(input: {
     return null
   }
 
-  return fromRow(data as ListingRow)
+  return fromRow(data as unknown as ListingRow)
 }
 
 // ---- Accept / Mark Complete (v2) ----
@@ -400,25 +565,11 @@ export async function confirmCompletionAsync(input: {
 // Past Trips/Deliveries section. This is a destructive action; UI must
 // confirm before calling.
 export async function cancelMatchedListingAsync(input: {
-  listingId: string
+  listing: Listing
 }): Promise<Listing | null> {
-  const { data, error } = await getAuthedClient()
-    .from("listings")
-    .update({ status: "expired" })
-    .eq("id", input.listingId)
-    // Race guard: only cancel if still in matched/in_transit. Prevents
-    // accidentally overwriting a listing that just transitioned to
-    // 'completed' between sheet render and button tap.
-    .in("status", ["matched", "in_transit"])
-    .select()
-    .single()
-
-  if (error) {
-    console.error("cancelMatchedListingAsync error:", error)
-    return null
-  }
-
-  return data ? fromRow(data as ListingRow) : null
+  const status = await postStatusTransition("cancel-matched", input.listing.id)
+  if (!status) return null
+  return { ...input.listing, status }
 }
 
 // Traveller marks the delivery as picked up: matched -> in_transit.
@@ -427,22 +578,11 @@ export async function cancelMatchedListingAsync(input: {
 // wrong state, mirroring cancelMatchedListingAsync. The row and Track-by-ID
 // reflect the new state immediately.
 export async function markInTransitAsync(input: {
-  listingId: string
+  listing: Listing
 }): Promise<Listing | null> {
-  const { data, error } = await getAuthedClient()
-    .from("listings")
-    .update({ status: "in_transit" })
-    .eq("id", input.listingId)
-    .eq("status", "matched")
-    .select()
-    .single()
-
-  if (error) {
-    console.error("markInTransitAsync error:", error)
-    return null
-  }
-
-  return data ? fromRow(data as ListingRow) : null
+  const status = await postStatusTransition("mark-in-transit", input.listing.id)
+  if (!status) return null
+  return { ...input.listing, status }
 }
 
 // Cancel an OPEN listing the current user posted, before anyone has accepted
@@ -455,22 +595,11 @@ export async function markInTransitAsync(input: {
 // between sheet render and tap, the row is now matched and this touches 0
 // rows, returning null, so we never yank an accepted (and paid) match.
 export async function cancelOpenListingAsync(input: {
-  listingId: string
+  listing: Listing
 }): Promise<Listing | null> {
-  const { data, error } = await getAuthedClient()
-    .from("listings")
-    .update({ status: "expired" })
-    .eq("id", input.listingId)
-    .eq("status", "open")
-    .select()
-    .single()
-
-  if (error) {
-    console.error("cancelOpenListingAsync error:", error)
-    return null
-  }
-
-  return data ? fromRow(data as ListingRow) : null
+  const status = await postStatusTransition("cancel-open", input.listing.id)
+  if (!status) return null
+  return { ...input.listing, status }
 }
 
 // Archive an expired listing from My Activity. This is a soft hide, not a
@@ -494,7 +623,7 @@ export async function archiveListingAsync(input: {
     .update({ [column]: new Date().toISOString() })
     .eq("id", input.listingId)
     .in("status", ["expired", "completed"])
-    .select()
+    .select(LISTING_COLUMNS)
     .single()
 
   if (error) {
@@ -502,7 +631,7 @@ export async function archiveListingAsync(input: {
     return null
   }
 
-  return data ? fromRow(data as ListingRow) : null
+  return data ? fromRow(data as unknown as ListingRow) : null
 }
 
 // ---- Maintenance ----

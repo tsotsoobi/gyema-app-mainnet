@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
+import { resolveCaller } from "@/lib/route-auth"
 import { hashDeliveryCode, hashesMatch } from "@/lib/delivery-code"
 import { STAMP_SENDER, STAMP_COURIER_CODE, hasStamp } from "@/lib/delivery-stamps"
+import { verifyLast4 } from "@/lib/last4-guard"
+import { GuestConfirmDeliveryBody, parseJsonBody } from "@/lib/schemas"
 export const runtime = "nodejs"
 
 // Delivery sign-off for guest jobs (handshake Part 2, closing end).
@@ -38,42 +41,22 @@ export const runtime = "nodejs"
 const MAX_CODE_ATTEMPTS = 5
 
 export async function POST(req: NextRequest) {
-  let body: {
-    trackingId?: string
-    via?: string
-    last4?: string
-    code?: string
-    accessToken?: string
-  }
-  try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ ok: false, reason: "invalid_body" }, { status: 400 })
-  }
-  const trackingId = (body.trackingId ?? "").trim().toUpperCase()
-  const via = (body.via ?? "").trim()
-  const last4 = (body.last4 ?? "").trim()
-  const code = (body.code ?? "").trim()
-  if (!/^GYM-[A-Z0-9]{6}$/.test(trackingId)) {
-    return NextResponse.json({ ok: false, reason: "invalid_tracking_id" }, { status: 400 })
-  }
-  // No default. An absent via is a malformed request, not a sender request:
-  // inferring one would put the discriminator back in the payload shape.
-  if (via !== STAMP_SENDER && via !== STAMP_COURIER_CODE) {
-    return NextResponse.json({ ok: false, reason: "invalid_via" }, { status: 400 })
-  }
-  if (via === STAMP_SENDER && !/^[0-9]{4}$/.test(last4)) {
-    return NextResponse.json({ ok: false, reason: "invalid_last4" }, { status: 400 })
-  }
-  if (via === STAMP_COURIER_CODE && !/^[0-9]{4}$/.test(code)) {
-    return NextResponse.json({ ok: false, reason: "invalid_code" }, { status: 400 })
-  }
+  // GuestConfirmDeliveryBody carries the discriminator rule: `via` must be one
+  // of the two stamps, and it decides whether last4 or code is required. There
+  // is no default, because inferring one would put the discriminator back into
+  // the shape of the payload rather than the value of a field.
+  const parsed = await parseJsonBody(req, GuestConfirmDeliveryBody)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
+  const { trackingId, via } = body
+  const last4 = body.last4 ?? ""
+  const code = body.code ?? ""
 
   const admin = createAdminClient()
   const { data, error } = await admin
     .from("guest_jobs")
     .select(
-      "tracking_id, status, sender_phone, assigned_courier, delivery_confirmed_at, delivery_confirmed_by, delivery_code_hash, delivery_code_attempts"
+      "tracking_id, status, sender_phone, assigned_courier, delivery_confirmed_at, delivery_confirmed_by, delivery_code_hash, delivery_code_attempts, last4_attempts"
     )
     .eq("tracking_id", trackingId)
     .eq("phone_verified", true)
@@ -89,11 +72,22 @@ export async function POST(req: NextRequest) {
   const coded = data.delivery_code_hash !== null
 
   if (via === STAMP_SENDER) {
-    // Last-4 guard. Digits-tail comparison, format-proof against however the
-    // sender typed their number at posting time.
-    const phoneDigits = (data.sender_phone ?? "").replace(/[^0-9]/g, "")
-    if (phoneDigits.length < 4 || phoneDigits.slice(-4) !== last4) {
-      return NextResponse.json({ ok: false, reason: "guard_failed" }, { status: 403 })
+    // Last-4 guard, with the same ten attempt ceiling the other two sender
+    // side routes use (lib/last4-guard.ts). The courier path below has its own
+    // five attempt budget on the code; the two counters are separate, so
+    // burning one does not spend the other.
+    const verdict = await verifyLast4({
+      admin,
+      trackingId,
+      senderPhone: data.sender_phone,
+      attemptsSoFar: data.last4_attempts,
+      last4,
+    })
+    if (!verdict.ok) {
+      return NextResponse.json(
+        { ok: false, reason: verdict.reason, attemptsLeft: verdict.attemptsLeft },
+        { status: verdict.status }
+      )
     }
   } else {
     // Courier path. A job with no code cannot take a courier stamp.
@@ -108,15 +102,11 @@ export async function POST(req: NextRequest) {
     if (!body.accessToken) {
       return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 })
     }
-    const { data: userData, error: userErr } = await admin.auth.getUser(body.accessToken)
-    if (userErr || !userData?.user) {
+    const caller = await resolveCaller(admin, body.accessToken)
+    if (!caller) {
       return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 })
     }
-    const meta = (userData.user.user_metadata ?? {}) as { pi_username?: string }
-    if (!meta.pi_username) {
-      return NextResponse.json({ ok: false, reason: "no_identity" }, { status: 401 })
-    }
-    if (!data.assigned_courier || data.assigned_courier !== meta.pi_username) {
+    if (!data.assigned_courier || data.assigned_courier !== caller.pi_username) {
       return NextResponse.json({ ok: false, reason: "not_assigned" }, { status: 403 })
     }
 

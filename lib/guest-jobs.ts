@@ -53,7 +53,7 @@ export async function getGuestJobByTrackingIdAsync(
 // 4 digits as the confirm routes. Reading it stamps nothing.
 export type DeliveryCodeReveal =
   | { ok: true; code: string }
-  | { ok: false; reason: string }
+  | { ok: false; reason: string; attemptsLeft?: number }
 
 export async function revealDeliveryCodeAsync(input: {
   trackingId: string
@@ -72,7 +72,13 @@ export async function revealDeliveryCodeAsync(input: {
     if (body?.ok && typeof body.code === "string") {
       return { ok: true, code: body.code }
     }
-    return { ok: false, reason: typeof body?.reason === "string" ? body.reason : "failed" }
+    // attemptsLeft rides along on a refusal so the card can count down. The
+    // route returns it on every last-4 refusal (lib/last4-guard.ts).
+    return {
+      ok: false,
+      reason: typeof body?.reason === "string" ? body.reason : "failed",
+      attemptsLeft: typeof body?.attemptsLeft === "number" ? body.attemptsLeft : undefined,
+    }
   } catch (e) {
     console.error("[gyema] revealDeliveryCodeAsync error:", e)
     return { ok: false, reason: "network" }

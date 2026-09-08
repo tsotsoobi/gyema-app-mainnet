@@ -25,3 +25,35 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+# secrets and credentials
+# The repository is public. Anything matching these must never be committed,
+# and gitleaks (npm run security) is the second line if one slips past.
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+# The dispatch reader CA lives outside the repo; this catches a stray copy.
+ca-cert*
+supabase-ca*
+
+# database dumps and exports
+*.dump
+*.sql.gz
+*.bak
+dumps/
+exports/
+*-export.csv
+*-export.json
+
+# supabase cli scratch
+supabase/.temp/
+supabase/.branches/
+
+# local agent and editor state
+.claude/settings.local.json
+
+# test and coverage output
+/coverage
+/test-results

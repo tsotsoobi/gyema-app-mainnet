@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
+import { GuestLast4Body, parseJsonBody } from "@/lib/schemas"
+import { verifyLast4 } from "@/lib/last4-guard"
 export const runtime = "nodejs"
 
 // Sender-side pickup confirmation for guest jobs (handshake Part 2).
@@ -8,25 +10,14 @@ export const runtime = "nodejs"
 // Only an accepted job can be confirmed. Idempotent on re-confirm.
 // Never expose sender_phone or any contact field in any response.
 export async function POST(req: NextRequest) {
-  let body: { trackingId?: string; last4?: string }
-  try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ ok: false, reason: "invalid_body" }, { status: 400 })
-  }
-  const trackingId = (body.trackingId ?? "").trim().toUpperCase()
-  const last4 = (body.last4 ?? "").trim()
-  if (!/^GYM-[A-Z0-9]{6}$/.test(trackingId)) {
-    return NextResponse.json({ ok: false, reason: "invalid_tracking_id" }, { status: 400 })
-  }
-  if (!/^[0-9]{4}$/.test(last4)) {
-    return NextResponse.json({ ok: false, reason: "invalid_last4" }, { status: 400 })
-  }
+  const parsed = await parseJsonBody(req, GuestLast4Body)
+  if (!parsed.ok) return parsed.response
+  const { trackingId, last4 } = parsed.data
 
   const admin = createAdminClient()
   const { data, error } = await admin
     .from("guest_jobs")
-    .select("tracking_id, status, sender_phone, pickup_confirmed_at")
+    .select("tracking_id, status, sender_phone, pickup_confirmed_at, last4_attempts")
     .eq("tracking_id", trackingId)
     .eq("phone_verified", true)
     .maybeSingle()
@@ -38,11 +29,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, reason: "not_found" }, { status: 404 })
   }
 
-  // Last-4 guard. sender_phone may be stored 0-prefixed or +233-prefixed
-  // (normalization is a queued item), so compare digits-only tails.
-  const phoneDigits = (data.sender_phone ?? "").replace(/[^0-9]/g, "")
-  if (phoneDigits.length < 4 || phoneDigits.slice(-4) !== last4) {
-    return NextResponse.json({ ok: false, reason: "guard_failed" }, { status: 403 })
+  // Last-4 guard, with the attempt ceiling. See lib/last4-guard.ts.
+  const verdict = await verifyLast4({
+    admin,
+    trackingId,
+    senderPhone: data.sender_phone,
+    attemptsSoFar: data.last4_attempts,
+    last4,
+  })
+  if (!verdict.ok) {
+    return NextResponse.json(
+      { ok: false, reason: verdict.reason, attemptsLeft: verdict.attemptsLeft },
+      { status: verdict.status }
+    )
   }
 
   // Idempotent: already confirmed is a success, not an error.

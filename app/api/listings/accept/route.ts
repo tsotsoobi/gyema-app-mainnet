@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
+import { resolveCaller } from "@/lib/route-auth"
+import { ListingAcceptBody, parseJsonBody } from "@/lib/schemas"
 
 // Server-side listing claim. Runs with the service_role client so it bypasses
 // the listings RLS UPDATE policy, which only allows the poster (or an
@@ -19,33 +21,19 @@ export const runtime = "nodejs"
 
 export async function POST(request: NextRequest) {
   try {
-    const { accessToken, listingId, accepterWhatsapp } = await request.json()
-
-    if (!accessToken || !listingId) {
-      return NextResponse.json(
-        { ok: false, reason: "bad_request" },
-        { status: 400 },
-      )
-    }
+    const parsed = await parseJsonBody(request, ListingAcceptBody)
+    if (!parsed.ok) return parsed.response
+    const { accessToken, listingId, accepterWhatsapp } = parsed.data
 
     const admin = createAdminClient()
 
-    // Verify the accepter from their Supabase session token.
-    const { data: userData, error: userErr } =
-      await admin.auth.getUser(accessToken)
-    if (userErr || !userData?.user) {
+    // Verify the accepter from their Supabase session token. resolveCaller
+    // reads app_metadata, which only the service_role key can write, never
+    // user_metadata, which the user writes themselves.
+    const caller = await resolveCaller(admin, accessToken)
+    if (!caller) {
       return NextResponse.json(
         { ok: false, reason: "unauthorized" },
-        { status: 401 },
-      )
-    }
-    const meta = (userData.user.user_metadata ?? {}) as {
-      pi_uid?: string
-      pi_username?: string
-    }
-    if (!meta.pi_uid || !meta.pi_username) {
-      return NextResponse.json(
-        { ok: false, reason: "no_identity" },
         { status: 401 },
       )
     }
@@ -59,14 +47,14 @@ export async function POST(request: NextRequest) {
       .from("listings")
       .update({
         status: "matched",
-        matched_with_user_id: meta.pi_uid,
-        matched_with_username: meta.pi_username,
+        matched_with_user_id: caller.pi_uid,
+        matched_with_username: caller.pi_username,
         matched_with_whatsapp: accepterWhatsapp ?? null,
         matched_at: new Date().toISOString(),
       })
       .eq("id", listingId)
       .eq("status", "open")
-      .neq("posted_by_id", meta.pi_uid)
+      .neq("posted_by_id", caller.pi_uid)
       .select()
       .single()
 

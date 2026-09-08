@@ -14,6 +14,7 @@ import {
   type GuestJobView,
 } from "@/lib/guest-jobs"
 import { hasStamp, STAMP_SENDER, STAMP_COURIER_CODE } from "@/lib/delivery-stamps"
+import { last4ErrorMessage, isLast4Locked } from "@/lib/last4-messages"
 import { DeliveryTracker } from "@/components/delivery-tracker"
 
 // Shared tracker UI for both /track (search + ?id=) and /track/[id] (path).
@@ -26,16 +27,22 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
   const [confirmLast4, setConfirmLast4] = useState("")
   const [confirming, setConfirming] = useState(false)
   const [confirmError, setConfirmError] = useState<string | null>(null)
+  const [confirmLocked, setConfirmLocked] = useState(false)
   const [confirmedAtLocal, setConfirmedAtLocal] = useState<string | null>(null)
   const [deliveryLast4, setDeliveryLast4] = useState("")
   const [deliveryConfirming, setDeliveryConfirming] = useState(false)
   const [deliveryError, setDeliveryError] = useState<string | null>(null)
+  const [deliveryLocked, setDeliveryLocked] = useState(false)
   const [deliveryConfirmedAtLocal, setDeliveryConfirmedAtLocal] = useState<string | null>(null)
   // Delivery-code reveal. Authenticates the sender without confirming
   // anything: revealing stamps nothing and moves no status.
   const [revealLast4, setRevealLast4] = useState("")
   const [revealing, setRevealing] = useState(false)
   const [revealError, setRevealError] = useState<string | null>(null)
+  // Set when the guard reports the ceiling reached. The input and the button
+  // go dead: a further attempt is refused whatever is typed, including the
+  // right digits, so offering one would be a lie.
+  const [revealLocked, setRevealLocked] = useState(false)
   const [revealedCode, setRevealedCode] = useState<string | null>(null)
 
   const runLookup = useCallback(async (rawId: string) => {
@@ -189,6 +196,7 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
                         inputMode="numeric"
                         maxLength={4}
                         value={revealLast4}
+                        disabled={revealLocked}
                         onChange={(e) => setRevealLast4(e.target.value.replace(/[^0-9]/g, ""))}
                         placeholder="1234"
                       />
@@ -197,7 +205,7 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
                     <Button
                       variant="outline"
                       className="w-full"
-                      disabled={revealing || revealLast4.length !== 4}
+                      disabled={revealing || revealLocked || revealLast4.length !== 4}
                       onClick={async () => {
                         setRevealing(true)
                         setRevealError(null)
@@ -208,14 +216,9 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
                         setRevealing(false)
                         if (res.ok) {
                           setRevealedCode(res.code)
-                        } else if (res.reason === "guard_failed") {
-                          setRevealError("Those digits do not match the phone this delivery was posted with.")
-                        } else if (res.reason === "no_code") {
-                          setRevealError("This delivery does not have a code yet. It is created when a courier accepts.")
-                        } else if (res.reason === "network") {
-                          setRevealError("Network problem. Please try again.")
                         } else {
-                          setRevealError("Could not show the code. Please try again.")
+                          setRevealError(last4ErrorMessage(res.reason, res.attemptsLeft))
+                          if (isLast4Locked(res.reason, res.attemptsLeft)) setRevealLocked(true)
                         }
                       }}
                     >
@@ -252,6 +255,7 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
                       inputMode="numeric"
                       maxLength={4}
                       value={confirmLast4}
+                      disabled={confirmLocked}
                       onChange={(e) => setConfirmLast4(e.target.value.replace(/[^0-9]/g, ""))}
                       placeholder="1234"
                     />
@@ -259,7 +263,7 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
                   {confirmError && <p className="text-xs" style={{ color: "#DC2626" }}>{confirmError}</p>}
                   <Button
                     className="w-full"
-                    disabled={confirming || confirmLast4.length !== 4}
+                    disabled={confirming || confirmLocked || confirmLast4.length !== 4}
                     onClick={async () => {
                       setConfirming(true)
                       setConfirmError(null)
@@ -272,16 +276,15 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
                         const body = await res.json()
                         if (body.ok) {
                           setConfirmedAtLocal(body.confirmedAt ?? new Date().toISOString())
-                        } else if (body.reason === "guard_failed") {
-                          setConfirmError("Those digits do not match the phone this delivery was posted with.")
-                        } else if (body.reason === "not_confirmable" || body.reason === "state_changed") {
-                          setConfirmError("This delivery cannot be confirmed right now. Refreshing status.")
-                          void runLookup(result.trackingId)
                         } else {
-                          setConfirmError("Could not confirm. Please try again.")
+                          setConfirmError(last4ErrorMessage(body.reason, body.attemptsLeft))
+                          if (isLast4Locked(body.reason, body.attemptsLeft)) setConfirmLocked(true)
+                          if (body.reason === "not_confirmable" || body.reason === "state_changed") {
+                            void runLookup(result.trackingId)
+                          }
                         }
                       } catch {
-                        setConfirmError("Network problem. Please try again.")
+                        setConfirmError(last4ErrorMessage("network"))
                       } finally {
                         setConfirming(false)
                       }
@@ -333,6 +336,7 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
                       inputMode="numeric"
                       maxLength={4}
                       value={deliveryLast4}
+                      disabled={deliveryLocked}
                       onChange={(e) => setDeliveryLast4(e.target.value.replace(/[^0-9]/g, ""))}
                       placeholder="1234"
                     />
@@ -340,7 +344,7 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
                   {deliveryError && <p className="text-xs" style={{ color: "#DC2626" }}>{deliveryError}</p>}
                   <Button
                     className="w-full"
-                    disabled={deliveryConfirming || deliveryLast4.length !== 4}
+                    disabled={deliveryConfirming || deliveryLocked || deliveryLast4.length !== 4}
                     onClick={async () => {
                       setDeliveryConfirming(true)
                       setDeliveryError(null)
@@ -359,16 +363,15 @@ export function TrackView({ initialId = "" }: { initialId?: string }) {
                         const body = await res.json()
                         if (body.ok) {
                           setDeliveryConfirmedAtLocal(body.confirmedAt ?? new Date().toISOString())
-                        } else if (body.reason === "guard_failed") {
-                          setDeliveryError("Those digits do not match the phone this delivery was posted with.")
-                        } else if (body.reason === "not_confirmable" || body.reason === "state_changed") {
-                          setDeliveryError("This delivery cannot be confirmed right now. Refreshing status.")
-                          void runLookup(result.trackingId)
                         } else {
-                          setDeliveryError("Could not confirm. Please try again.")
+                          setDeliveryError(last4ErrorMessage(body.reason, body.attemptsLeft))
+                          if (isLast4Locked(body.reason, body.attemptsLeft)) setDeliveryLocked(true)
+                          if (body.reason === "not_confirmable" || body.reason === "state_changed") {
+                            void runLookup(result.trackingId)
+                          }
                         }
                       } catch {
-                        setDeliveryError("Network problem. Please try again.")
+                        setDeliveryError(last4ErrorMessage("network"))
                       } finally {
                         setDeliveryConfirming(false)
                       }

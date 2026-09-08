@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { GUEST_AREAS, quoteCedis as computeQuoteCedis } from "@/lib/guest-pricing"
+import { GuestCreateBody, parseJsonBody } from "@/lib/schemas"
 
 // Guest create: the cedis dispatch rail. Writes an UNVERIFIED draft to
-// guest_jobs (phone_verified = false). A separate verify step flips the flag;
-// the dispatcher queue only reads phone_verified = true rows, so no courier is
-// ever assigned to an unverified job. This route never touches `listings`,
+// guest_jobs (phone_verified = false). Nothing in this codebase flips that
+// flag: the operator matches the sender's WhatsApp message to the row and
+// sets phone_verified = true by hand in the Supabase dashboard. There is no
+// OTP send or verify route, on either network. The dispatcher queue only
+// reads phone_verified = true rows, so no courier is ever assigned to a job
+// the operator has not matched. This route never touches `listings`,
 // never fires a 1 Pi connection-fee event: two rails, never blended.
 //
 // Runs with the service_role admin client because guest_jobs has RLS enabled
@@ -62,40 +66,37 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, reason: "disabled" }, { status: 403 })
   }
   try {
-    const body = await request.json()
+    // GuestCreateBody does the trimming, the required fields, the enums, the
+    // length caps and the phone shape. This is the only route in the app an
+    // unauthenticated stranger can write a row with, so every field it accepts
+    // is bounded: see lib/schemas.ts for what each cap is and why.
+    //
+    // cleanText still runs below on the optional free text, because zod's trim
+    // leaves an empty string where this table wants a NULL.
+    const parsed = await parseJsonBody(request, GuestCreateBody)
+    if (!parsed.ok) return parsed.response
     const {
-      pickupArea: rawPickupArea, pickupLandmark: rawPickupLandmark,
-      dropoffArea: rawDropoffArea, dropoffLandmark: rawDropoffLandmark,
-      packageSize, contentsNote: rawContentsNote,
-      recipientName: rawRecipientName, recipientPhone,
+      pickupArea,
+      dropoffArea,
+      packageSize,
       senderPhone,
-      whenPref, scheduledDate,
+      recipientPhone,
+      whenPref,
+      scheduledDate,
       paymentType,
       offList,
-    } = body ?? {}
+    } = parsed.data
 
-    // Normalized before any validation, so the required check, the bounded-list
-    // check, the price computation and the insert all read one value.
-    const pickupArea = cleanText(rawPickupArea)
-    const dropoffArea = cleanText(rawDropoffArea)
-    const pickupLandmark = cleanText(rawPickupLandmark)
-    const dropoffLandmark = cleanText(rawDropoffLandmark)
-    const contentsNote = cleanText(rawContentsNote)
-    const recipientName = cleanText(rawRecipientName)
+    const pickupLandmark = cleanText(parsed.data.pickupLandmark)
+    const dropoffLandmark = cleanText(parsed.data.dropoffLandmark)
+    const contentsNote = cleanText(parsed.data.contentsNote)
+    const recipientName = cleanText(parsed.data.recipientName)
 
-    // Required-field validation
-    if (!pickupArea || !dropoffArea || !packageSize || !senderPhone) {
-      return NextResponse.json({ ok: false, reason: "bad_request" }, { status: 400 })
-    }
-    // Bounded city list (same normalized set as the app)
+    // The bounded area list stays here rather than in the schema: it is a
+    // product decision that changes as corridors open, and off-list jobs
+    // deliberately bypass it and route to a human quote.
     if (!offList && (!(pickupArea in GUEST_AREAS) || !(dropoffArea in GUEST_AREAS))) {
       return NextResponse.json({ ok: false, reason: "unbounded_city" }, { status: 400 })
-    }
-    if (!["small", "medium", "large"].includes(packageSize)) {
-      return NextResponse.json({ ok: false, reason: "bad_size" }, { status: 400 })
-    }
-    if (paymentType && !["cash", "momo"].includes(paymentType)) {
-      return NextResponse.json({ ok: false, reason: "bad_payment" }, { status: 400 })
     }
 
     const admin = createAdminClient()
@@ -133,8 +134,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, reason: "insert_failed" }, { status: 500 })
     }
 
-    // Return only the tracking ID and status. The draft is inert until a
-    // separate verify step sets phone_verified = true.
+    // Return only the tracking ID and status. The draft is inert until the
+    // operator sets phone_verified = true by hand in the dashboard.
     return NextResponse.json({
       ok: true,
       trackingId: data.tracking_id,
