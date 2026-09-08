@@ -1,0 +1,40 @@
+#!/bin/sh
+# Gyema pre-commit hook: gitleaks over the staged changes.
+#
+# Installed by `npm run hooks:install`, which points core.hooksPath at this
+# directory. Git does not track .git/hooks, so the hook lives here and every
+# clone opts in with that one command.
+#
+# `gitleaks git --staged` scans what is about to be committed, which is the
+# only moment a secret can still be stopped for free. Once it is in a commit on
+# a public repository it is disclosed, and the question becomes rotation, not
+# removal.
+#
+# --redact: a finding prints its rule and location, never the value.
+#
+# KNOWN GAP, on purpose: gitleaks skips paths that .gitignore excludes. That is
+# the right default (an ignored file cannot be committed) but it means
+# `git add -f` on an ignored path stages content this hook will not read. The
+# ignore list covers *.pem, *.key and dumps precisely so those never reach a
+# commit; forcing one past it is a deliberate act and is on the person doing it.
+#
+# To bypass in a genuine false positive, commit with --no-verify and say so in
+# the commit message. Prefer a gitleaks allowlist entry over a habit of
+# bypassing.
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks is not on PATH."
+  echo "  Install it (https://github.com/gitleaks/gitleaks) or commit with"
+  echo "  --no-verify if you have checked the diff by hand."
+  exit 1
+fi
+
+if ! gitleaks git --staged --redact --no-banner .; then
+  echo ""
+  echo "pre-commit: gitleaks found something in the staged changes. Commit refused."
+  echo "  The repository is public: treat any real hit as already disclosed once"
+  echo "  pushed, and rotate before purging."
+  exit 1
+fi
+
+exit 0
