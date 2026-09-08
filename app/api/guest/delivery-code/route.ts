@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { codeFromHash } from "@/lib/delivery-code"
+import { verifyLast4 } from "@/lib/last4-guard"
 export const runtime = "nodejs"
 
 // Sender-side reveal of the one-time delivery code.
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest) {
   const admin = createAdminClient()
   const { data, error } = await admin
     .from("guest_jobs")
-    .select("tracking_id, sender_phone, delivery_code_hash")
+    .select("tracking_id, sender_phone, delivery_code_hash, last4_attempts")
     .eq("tracking_id", trackingId)
     .eq("phone_verified", true)
     .maybeSingle()
@@ -49,13 +50,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, reason: "not_found" }, { status: 404 })
   }
 
-  // Last-4 guard, byte-for-byte the check both confirm routes run: digits-tail
-  // comparison, format-proof against however the sender typed their number.
-  // This guard must never weaken relative to those two, since this route hands
-  // back a secret where they only stamp a column.
-  const phoneDigits = (data.sender_phone ?? "").replace(/[^0-9]/g, "")
-  if (phoneDigits.length < 4 || phoneDigits.slice(-4) !== last4) {
-    return NextResponse.json({ ok: false, reason: "guard_failed" }, { status: 403 })
+  // Last-4 guard, the same check and the same ceiling all three routes run
+  // (lib/last4-guard.ts). This one must never weaken relative to the other
+  // two, since it hands back a secret where they only stamp a column.
+  const verdict = await verifyLast4({
+    admin,
+    trackingId,
+    senderPhone: data.sender_phone,
+    attemptsSoFar: data.last4_attempts,
+    last4,
+  })
+  if (!verdict.ok) {
+    return NextResponse.json(
+      { ok: false, reason: verdict.reason, attemptsLeft: verdict.attemptsLeft },
+      { status: verdict.status }
+    )
   }
 
   // Jobs posted before this feature, and jobs nobody has accepted yet, have no

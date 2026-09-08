@@ -191,18 +191,34 @@ describe("POST /api/guest/accept", () => {
     expect(mock.selectedColumns()).not.toContain("delivery_code_hash")
   })
 
-  // S-4 in docs/security-inventory.md. The plaintext code is handed to the
-  // courier at claim time, which is the one party it is meant to be evidence
-  // against. Recorded as the current contract so the fix has a failing test to
-  // flip rather than a silent behaviour change.
-  it("KNOWN GAP S-4: returns the delivery code plaintext to the accepter", async () => {
+  // S-4, now closed. The plaintext code used to be in this response, on the
+  // reasoning that the client mapper dropped it. That is a UI decision, not a
+  // control: it was one glance at a network tab away, hours before the courier
+  // reached any door.
+  it("never returns the delivery code to the accepter", async () => {
     mock.asPioneer("pi-uid-1", "courier_one")
     mock.queue({ data: { tracking_id: JOB }, error: null })
     const res = await accept.POST(
       postJson("http://localhost/x", { accessToken: "good", trackingId: JOB }) as never
     )
-    const body = await res.json()
-    expect(body.deliveryCode).toMatch(/^[0-9]{4}$/)
+    const text = await res.text()
+    const body = JSON.parse(text)
+    expect(body.ok).toBe(true)
+    expect(body.deliveryCode).toBeUndefined()
+    // Not under another name either: no bare four digit string anywhere in it.
+    expect(text).not.toMatch(/[0-9]{4}/)
+  })
+
+  it("still stores the hash, so the sender can be shown the code later", async () => {
+    mock.asPioneer("pi-uid-1", "courier_one")
+    mock.queue({ data: { tracking_id: JOB }, error: null })
+    await accept.POST(
+      postJson("http://localhost/x", { accessToken: "good", trackingId: JOB }) as never
+    )
+    const update = mock.calls.find((c) => c.method === "update")
+    const row = update?.args[0] as Record<string, unknown>
+    expect(typeof row.delivery_code_hash).toBe("string")
+    expect((row.delivery_code_hash as string).length).toBe(64)
   })
 })
 
@@ -254,27 +270,8 @@ describe("POST /api/guest/delivery-code", () => {
     expect(await res.json()).toMatchObject({ reason: "guard_failed" })
   })
 
-  // S-2. The guard is a 10,000 value space with no attempt counter and no
-  // limiter, and a win returns the delivery code in plaintext. This test proves
-  // the absence, so Phase 2 has something to invert rather than something to
-  // add blind.
-  it("KNOWN GAP S-2: the last-4 guard has no attempt ceiling", async () => {
-    for (let i = 0; i < 12; i++) {
-      mock.queue({
-        data: { tracking_id: JOB, sender_phone: "0244123456", delivery_code_hash: "x" },
-        error: null,
-      })
-      const res = await deliveryCode.POST(
-        postJson("http://localhost/x", {
-          trackingId: JOB,
-          last4: String(i).padStart(4, "0"),
-        }) as never
-      )
-      // Every attempt gets the same answer. Never a lockout, never a 429.
-      expect(res.status).toBe(403)
-      expect((await res.json()).reason).toBe("guard_failed")
-    }
-  })
+  // The attempt ceiling on this guard has its own file:
+  // tests/routes/last4-guard.test.ts (S-2).
 })
 
 describe("POST /api/guest/confirm-pickup", () => {

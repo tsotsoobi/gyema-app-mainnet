@@ -11,7 +11,9 @@ import { mintDeliveryCode, hashDeliveryCode } from "@/lib/delivery-code"
 //
 // The claim also mints the one-time delivery code. It rides the same atomic
 // update as the claim itself, so a job is never assigned without a code and
-// a code is never minted for a job the courier failed to win.
+// a code is never minted for a job the courier failed to win. Only the hash
+// is kept, and the plaintext is discarded here: it is not returned to the
+// courier, who is the one party it exists as evidence against.
 export const runtime = "nodejs"
 
 // Explicit column list, same convention as /api/guest/mine. NEVER select()
@@ -69,12 +71,18 @@ export async function POST(request: NextRequest) {
       if (error) console.error("[gyema] guest accept update error:", error)
       return NextResponse.json({ ok: false, reason: "not_open" })
     }
-    // The plaintext leaves the server exactly once, here, and is never
-    // readable again: only its hash was stored. The client mapper in
-    // lib/guest-jobs.ts deliberately drops it rather than surfacing it in the
-    // accept sheet, since the accepter is the courier and a code the courier
-    // already knows proves nothing about where they are standing.
-    return NextResponse.json({ ok: true, job: data, deliveryCode })
+    // THE PLAINTEXT CODE IS NOT IN THIS RESPONSE. It used to be, and the
+    // reasoning was that the client mapper dropped it rather than showing it
+    // in the accept sheet. That is a UI decision, not a control: the value was
+    // in the HTTP response, one glance at a network tab away (finding S-4).
+    //
+    // The code is the courier's proof that they reached the door and the
+    // recipient spoke it aloud. A courier who has it at claim time, hours
+    // before they collect anything, can stamp a delivery they never made. So
+    // it is minted here, hashed into the row here, and leaves the server only
+    // through /api/guest/delivery-code, to the sender, behind the last-4
+    // guard, for the sender to carry to the recipient.
+    return NextResponse.json({ ok: true, job: data })
   } catch (err) {
     console.error("[gyema] guest accept route error:", err)
     return NextResponse.json({ ok: false, reason: "server_error" }, { status: 500 })

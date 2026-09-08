@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
+import { verifyLast4 } from "@/lib/last4-guard"
 export const runtime = "nodejs"
 
 // Sender-side pickup confirmation for guest jobs (handshake Part 2).
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
   const admin = createAdminClient()
   const { data, error } = await admin
     .from("guest_jobs")
-    .select("tracking_id, status, sender_phone, pickup_confirmed_at")
+    .select("tracking_id, status, sender_phone, pickup_confirmed_at, last4_attempts")
     .eq("tracking_id", trackingId)
     .eq("phone_verified", true)
     .maybeSingle()
@@ -38,11 +39,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, reason: "not_found" }, { status: 404 })
   }
 
-  // Last-4 guard. sender_phone may be stored 0-prefixed or +233-prefixed
-  // (normalization is a queued item), so compare digits-only tails.
-  const phoneDigits = (data.sender_phone ?? "").replace(/[^0-9]/g, "")
-  if (phoneDigits.length < 4 || phoneDigits.slice(-4) !== last4) {
-    return NextResponse.json({ ok: false, reason: "guard_failed" }, { status: 403 })
+  // Last-4 guard, with the attempt ceiling. See lib/last4-guard.ts.
+  const verdict = await verifyLast4({
+    admin,
+    trackingId,
+    senderPhone: data.sender_phone,
+    attemptsSoFar: data.last4_attempts,
+    last4,
+  })
+  if (!verdict.ok) {
+    return NextResponse.json(
+      { ok: false, reason: verdict.reason, attemptsLeft: verdict.attemptsLeft },
+      { status: verdict.status }
+    )
   }
 
   // Idempotent: already confirmed is a success, not an error.

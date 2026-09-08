@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase-admin"
 import { resolveCaller } from "@/lib/route-auth"
 import { hashDeliveryCode, hashesMatch } from "@/lib/delivery-code"
 import { STAMP_SENDER, STAMP_COURIER_CODE, hasStamp } from "@/lib/delivery-stamps"
+import { verifyLast4 } from "@/lib/last4-guard"
 export const runtime = "nodejs"
 
 // Delivery sign-off for guest jobs (handshake Part 2, closing end).
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest) {
   const { data, error } = await admin
     .from("guest_jobs")
     .select(
-      "tracking_id, status, sender_phone, assigned_courier, delivery_confirmed_at, delivery_confirmed_by, delivery_code_hash, delivery_code_attempts"
+      "tracking_id, status, sender_phone, assigned_courier, delivery_confirmed_at, delivery_confirmed_by, delivery_code_hash, delivery_code_attempts, last4_attempts"
     )
     .eq("tracking_id", trackingId)
     .eq("phone_verified", true)
@@ -90,11 +91,22 @@ export async function POST(req: NextRequest) {
   const coded = data.delivery_code_hash !== null
 
   if (via === STAMP_SENDER) {
-    // Last-4 guard. Digits-tail comparison, format-proof against however the
-    // sender typed their number at posting time.
-    const phoneDigits = (data.sender_phone ?? "").replace(/[^0-9]/g, "")
-    if (phoneDigits.length < 4 || phoneDigits.slice(-4) !== last4) {
-      return NextResponse.json({ ok: false, reason: "guard_failed" }, { status: 403 })
+    // Last-4 guard, with the same ten attempt ceiling the other two sender
+    // side routes use (lib/last4-guard.ts). The courier path below has its own
+    // five attempt budget on the code; the two counters are separate, so
+    // burning one does not spend the other.
+    const verdict = await verifyLast4({
+      admin,
+      trackingId,
+      senderPhone: data.sender_phone,
+      attemptsSoFar: data.last4_attempts,
+      last4,
+    })
+    if (!verdict.ok) {
+      return NextResponse.json(
+        { ok: false, reason: verdict.reason, attemptsLeft: verdict.attemptsLeft },
+        { status: verdict.status }
+      )
     }
   } else {
     // Courier path. A job with no code cannot take a courier stamp.
