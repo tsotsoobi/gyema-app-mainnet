@@ -9,20 +9,18 @@
 // and behind a report-only flag, because a CSP that blocks the Pi SDK breaks
 // sign-in and payments rather than degrading them.
 //
-// FRAMING IS THE ONE THAT NEEDS CARE HERE. The app runs INSIDE the Pi Browser,
+// FRAMING IS THE ONE THAT NEEDS CARE. The app runs INSIDE the Pi Browser,
 // which serves it through a *.pinet.com proxy, so it is framed by design.
 // X-Frame-Options cannot express "this origin and that wildcard", it only has
 // DENY and SAMEORIGIN, so it is not used at all: a SAMEORIGIN would break the
-// app in the only browser it is meant to run in. frame-ancestors does express
-// it, and is set here as a CSP carrying that one directive. The full policy
-// replaces this header in the next commit; two Content-Security-Policy
-// headers on one response are both enforced and their intersection applies,
-// which is a confusing way to break something, so there must only ever be one.
-const FRAME_ANCESTORS = [
-  "'self'",
-  "https://*.pinet.com",
-  "https://*.minepi.com",
-].join(" ")
+// app in the only browser it is meant to run in.
+//
+// frame-ancestors does express it, and now lives in the single CSP that
+// middleware.ts sets per request (lib/csp.ts). It was briefly set here as a
+// CSP carrying that one directive; it moved rather than being duplicated,
+// because two Content-Security-Policy headers on one response are both
+// enforced and their intersection applies, which is a confusing way to break
+// something.
 
 const securityHeaders = [
   {
@@ -64,10 +62,6 @@ const securityHeaders = [
     // surface, not per app.
     key: "Permissions-Policy",
     value: "geolocation=(), camera=(), microphone=(), payment=(), usb=(), interest-cohort=()",
-  },
-  {
-    key: "Content-Security-Policy",
-    value: `frame-ancestors ${FRAME_ANCESTORS}`,
   },
 ]
 

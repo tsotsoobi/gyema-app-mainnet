@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
+import { buildCsp, cspHeaderName } from "@/lib/csp"
 
-// Edge middleware. One job in this commit: get every request onto https.
+// Edge middleware. Two jobs: get every request onto https, and mint the CSP
+// nonce for the request so the policy and the page agree about it.
 //
 // Vercel terminates TLS and answers http itself, so a request that arrives
 // over http reaches the app as an ordinary request with x-forwarded-proto
@@ -43,7 +45,22 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(url, 308)
   }
 
-  return NextResponse.next()
+  // A fresh nonce per request. Base64 of 16 random bytes: not a secret, but
+  // unpredictable to an injected script, which is the only reader that matters.
+  const nonce = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64")
+  const csp = buildCsp(nonce)
+
+  // The nonce reaches the layout through a REQUEST header, which is how a
+  // server component reads a per-request value. It goes out on the response
+  // too, so it can be read from a browser's network tab while debugging a
+  // blocked script.
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set("x-nonce", nonce)
+
+  const response = NextResponse.next({ request: { headers: requestHeaders } })
+  response.headers.set(cspHeaderName(process.env.CSP_ENFORCE), csp)
+  response.headers.set("x-nonce", nonce)
+  return response
 }
 
 export const config = {

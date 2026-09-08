@@ -10,7 +10,7 @@ import nextConfig from "@/next.config.mjs"
 // loopback, where there is no https to redirect to.
 
 async function headerMap() {
-  const rules = await (nextConfig as { headers: () => Promise<Array<{ source: string; headers: Array<{ key: string; value: string }> }>> }).headers()
+  const rules = await (nextConfig as unknown as { headers: () => Promise<Array<{ source: string; headers: Array<{ key: string; value: string }> }>> }).headers()
   const all = new Map<string, string>()
   for (const rule of rules) {
     for (const h of rule.headers) all.set(h.key, h.value)
@@ -56,13 +56,13 @@ describe("the static headers", () => {
     expect(pp).not.toContain("camera=(self)")
   })
 
-  it("admits the Pi Browser proxy as a framing ancestor", async () => {
+  it("sets no CSP of its own, because middleware sets the only one", async () => {
+    // frame-ancestors lives in the per-request policy now (lib/csp.ts). Two
+    // CSP headers on one response are both enforced and the intersection
+    // applies, which is a confusing way to break something.
     const { all } = await headerMap()
-    const csp = all.get("Content-Security-Policy") ?? ""
-    expect(csp).toContain("frame-ancestors")
-    // The app is framed by design: Pi Browser serves it through *.pinet.com.
-    expect(csp).toContain("https://*.pinet.com")
-    expect(csp).toContain("'self'")
+    expect(all.has("Content-Security-Policy")).toBe(false)
+    expect(all.has("Content-Security-Policy-Report-Only")).toBe(false)
   })
 
   it("does not use X-Frame-Options, which cannot express that", async () => {
@@ -73,12 +73,11 @@ describe("the static headers", () => {
     expect(source).toContain("X-Frame-Options cannot express")
   })
 
-  it("carries exactly one Content-Security-Policy header", async () => {
-    // Two CSP headers on one response are both enforced and the intersection
-    // applies, which is a confusing way to break something.
+  it("carries no duplicate of any header middleware also sets", async () => {
     const { rules } = await headerMap()
-    const csps = rules.flatMap((r) => r.headers.filter((h) => h.key === "Content-Security-Policy"))
-    expect(csps).toHaveLength(1)
+    const keys = rules.flatMap((r) => r.headers.map((h) => h.key))
+    expect(new Set(keys).size).toBe(keys.length)
+    expect(keys).not.toContain("Content-Security-Policy")
   })
 })
 
