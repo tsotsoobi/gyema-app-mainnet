@@ -394,7 +394,13 @@ export const createU2APayment = async (input: {
             const res = await fetch("/api/payments/approve", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId }),
+              // The session token goes with it: the approve route requires a
+              // signed in caller and binds the payment to a listing that
+              // caller has claimed. Without this the route answers 401.
+              body: JSON.stringify({
+                accessToken: getSupabaseSession()?.accessToken,
+                paymentId,
+              }),
             })
             if (!res.ok) {
               const errText = await res.text()
@@ -412,7 +418,11 @@ export const createU2APayment = async (input: {
             const res = await fetch("/api/payments/complete", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId, txid }),
+              body: JSON.stringify({
+                accessToken: getSupabaseSession()?.accessToken,
+                paymentId,
+                txid,
+              }),
             })
             if (!res.ok) {
               const errText = await res.text()
