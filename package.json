@@ -9,7 +9,9 @@
     "hooks:install": "git config core.hooksPath .githooks",
     "lint": "next lint",
     "security": "gitleaks git . --redact --no-banner --log-opts=--all && npm audit --omit=dev --audit-level=high",
-    "start": "next start"
+    "start": "next start",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -77,6 +79,8 @@
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "tw-animate-css": "1.3.3",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0"
   }
 }
