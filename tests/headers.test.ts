@@ -132,6 +132,11 @@ describe("the https redirect", () => {
       .filter((l) => !l.trim().startsWith("//"))
       .join("\n")
     expect(code).not.toContain("NODE_ENV")
-    expect(code).not.toContain("process.env")
+
+    // One environment variable is read in this file, and it is the CSP mode
+    // flag: a deliberate switch rather than an accident of deployment.
+    // Anything else appearing here should be looked at.
+    const envReads = code.match(/process\.env\.[A-Z_]+/g) ?? []
+    expect(envReads).toEqual(["process.env.CSP_ENFORCE"])
   })
 })
