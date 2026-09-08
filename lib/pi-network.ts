@@ -230,11 +230,14 @@ export const signInAndPersist = async (): Promise<PiUser> => {
  * app thinks they're signed in but has no Supabase session to authenticate
  * backend requests. POSTs fail with generic network errors.
  *
- * This function fixes that by exchanging the stored Pi accessToken for a
- * fresh Supabase session via /api/auth/verify. The verify route is
- * idempotent: for existing pioneers it just returns their session; for
- * users whose Pi token has expired it returns 401, signalling we need a
- * fresh Pi.authenticate().
+ * This function fixes that by asking the Pi SDK for a fresh access token and
+ * exchanging it for a Supabase session via /api/auth/verify. The verify route
+ * is idempotent: for existing pioneers it just returns their session.
+ *
+ * It used to replay a Pi accessToken kept in localStorage. That token is a
+ * live credential which mints a full session, so storing it undid the care
+ * taken to keep the Supabase tokens in memory only (S-9). Nothing is stored
+ * now, and the SDK is asked instead.
  *
  * SAFETY: The fetch is wrapped in a 5-second AbortController timeout.
  * Without this, a hung verify call (e.g. preview deployment missing env
@@ -255,12 +258,31 @@ export const restoreSessionFromStorage = async (): Promise<PiUser | null> => {
   // Guest sessions don't need verify — they're local-only.
   if (isGuest(stored)) return stored
 
-  // Real Pioneer session — exchange the stored Pi accessToken for a
-  // fresh Supabase session.
-  if (!stored.accessToken) {
-    console.warn("[pi-network] Stored user has no accessToken, cannot restore")
+  // Real Pioneer session. The Pi accessToken is no longer persisted
+  // (see getStoredUser), so there is nothing stored to exchange. A fresh one
+  // comes from the SDK instead.
+  //
+  // Pi.authenticate is effectively idempotent once the Pioneer has granted
+  // the scopes: the same call createU2APayment makes before every payment.
+  // So a cold mount asks Pi again rather than replaying a credential kept on
+  // disk, which is both the safer shape and, for the Pioneer, the same
+  // experience.
+  //
+  // Outside Pi Browser there is no SDK and therefore no restore. The caller
+  // treats null as "show the sign in screen", which is the correct answer
+  // there anyway: nothing else works outside Pi Browser either.
+  if (!isPiSdkAvailable()) {
     return null
   }
+
+  let piUser: PiUser
+  try {
+    piUser = await authenticateWithPi()
+  } catch (error) {
+    console.warn("[pi-network] Could not re-authenticate with Pi on restore:", error)
+    return null
+  }
+  const freshPiToken = piUser.accessToken
 
   // 5-second timeout via AbortController. Caps the worst-case spinner
   // delay on cold mount when verify hangs (e.g. env misconfig on a
@@ -275,7 +297,7 @@ export const restoreSessionFromStorage = async (): Promise<PiUser | null> => {
     const response = await fetch("/api/auth/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accessToken: stored.accessToken }),
+      body: JSON.stringify({ accessToken: freshPiToken }),
       signal: controller.signal,
     })
     clearTimeout(timeoutId)
@@ -309,7 +331,7 @@ export const restoreSessionFromStorage = async (): Promise<PiUser | null> => {
     const restored: PiUser = {
       uid: body.pioneer.pi_uid,
       username: body.pioneer.pi_username,
-      accessToken: stored.accessToken,
+      accessToken: freshPiToken,
       supabaseAccessToken: body.session.access_token,
       supabaseRefreshToken: body.session.refresh_token,
       supabaseUserId: body.pioneer.supabase_user_id,
@@ -492,14 +514,24 @@ export const getStoredUser = (): PiUser | null => {
     const raw = localStorage.getItem(USER_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as PiUser
-    // SECURITY: never read Supabase session tokens from localStorage.
-    // If a previous version of the app stored them, drop them on read.
+    // SECURITY: no token of any kind comes out of localStorage.
+    //
+    // The Supabase session tokens were never persisted. The Pi accessToken
+    // was, and it was the weaker link of the two: it is a live credential
+    // that /api/auth/verify exchanges for a full Supabase session, so any
+    // script that could read localStorage could mint one from any device
+    // until Pi expired the token (finding S-9). Keeping the Supabase tokens
+    // out of storage while leaving the thing that mints them in it protected
+    // nothing.
+    //
+    // What is left here is not a credential: a uid and a username, enough to
+    // know who was signed in and render their name while the session is
+    // re-established from the Pi SDK. A value read from a previous version's
+    // storage is dropped on the floor by this shape.
     return {
       uid: parsed.uid,
       username: parsed.username,
-      accessToken: parsed.accessToken,
-      // supabaseAccessToken/supabaseRefreshToken intentionally omitted
-      // — these come only from in-memory after a fresh sign-in.
+      accessToken: "",
     }
   } catch {
     return null
@@ -509,13 +541,12 @@ export const getStoredUser = (): PiUser | null => {
 export const setStoredUser = (user: PiUser | null) => {
   if (typeof window === "undefined") return
   if (user) {
-    // SECURITY: strip Supabase session tokens before persisting.
-    // Only uid, username, accessToken go to localStorage. Session
-    // tokens stay in-memory only.
+    // SECURITY: uid and username only. No Pi accessToken, no Supabase
+    // tokens. See getStoredUser for why the Pi token stopped being
+    // persisted. Anything added to this object is a thing an XSS can read.
     const persistable = {
       uid: user.uid,
       username: user.username,
-      accessToken: user.accessToken,
     }
     localStorage.setItem(USER_KEY, JSON.stringify(persistable))
   } else {

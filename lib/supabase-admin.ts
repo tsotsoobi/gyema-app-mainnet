@@ -18,6 +18,7 @@
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js"
 import { createHmac } from "crypto"
+import { assertUsablePioneerSalt } from "./env-guard"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 
@@ -294,10 +295,12 @@ export async function generatePioneerSession(params: {
  * (e.g. "gyema-v3") and invalidating all existing synthetic passwords.
  */
 function derivePioneerPassword(piUid: string): string {
+  // Refuses an absent, placeholder, short or low-entropy salt, at first use.
+  // See lib/env-guard.ts: this value is the whole authentication chain, and a
+  // deployment running on "changeme" should fail its first sign in rather
+  // than work quietly (finding S-8).
   const salt = process.env.PIONEER_PASSWORD_SALT
-  if (!salt) {
-    throw new Error("[supabase-admin] PIONEER_PASSWORD_SALT is not configured")
-  }
+  assertUsablePioneerSalt(salt)
   return createHmac("sha256", salt).update(`${piUid}.gyema-v2`).digest("hex")
 }
 
