@@ -20,6 +20,7 @@ import {
   cancelOpenListingAsync,
   confirmCompletionAsync,
   markInTransitAsync,
+  getCounterpartContactAsync,
 } from "@/lib/listings-async"
 import { createU2APayment, signInAndPersist, type PiUser } from "@/lib/pi-network"
 
@@ -100,6 +101,13 @@ export function ListingDetailSheet({
   const [cancelPending, setCancelPending] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
+
+  // The counterparty's contact details, fetched rather than read off the row.
+  // See the Coordinate section below for why.
+  const [counterpart, setCounterpart] = useState<{
+    username: string | null
+    whatsapp: string | null
+  } | null>(null)
 
   // Persisted WhatsApp number, loaded from localStorage on mount.
   // Falls back to whatever the parent passed in via currentUser.whatsapp
@@ -210,10 +218,53 @@ export function ListingDetailSheet({
   // the listing is matched and the viewer is one of the two parties.
   const viewerIsPoster = listing.postedById === currentUser.uid
 
-  const otherPartyWhatsapp = viewerIsPoster
-    ? listing.matchedWithWhatsapp
-    : listing.whatsapp
+  // The number does not come off the listing any more, because it is not on
+  // the listing any more. Neither anon nor authenticated can read whatsapp or
+  // matched_with_whatsapp from the table (db/migrations/
+  // 2026-09-07_grant_baseline.sql), which is what closed S-1: the open feed
+  // and the public track lookup used to hand every viewer both parties'
+  // phone numbers in the JSON, whether or not the UI drew them.
+  //
+  // public.listing_counterpart_contact is the only path left. It is security
+  // definer, it resolves the caller through public.pioneers from auth.uid()
+  // rather than from user_metadata (which the user can write), and it returns
+  // a row only to the poster or the matched party on this listing. Every
+  // refusal comes back as null and they are indistinguishable from each
+  // other, so nothing here can tell "not your listing" from "not matched".
+  const isPartyToListing =
+    viewerIsPoster || listing.matchedWithUserId === currentUser.uid
 
+  useEffect(() => {
+    // Nothing to fetch until the listing is matched and the viewer is one of
+    // the two parties. A guest never gets here: anon does not hold EXECUTE on
+    // the function.
+    if (!isPartyToListing || !listing.matchedWithUserId) {
+      setCounterpart(null)
+      return
+    }
+    let cancelled = false
+    getCounterpartContactAsync(listing.id)
+      .then((contact) => {
+        if (cancelled) return
+        setCounterpart(
+          contact
+            ? { username: contact.counterpartyUsername, whatsapp: contact.whatsapp }
+            : null
+        )
+      })
+      .catch(() => {
+        // A failed lookup shows the same UI as a refused one: no button.
+        if (!cancelled) setCounterpart(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [listing.id, listing.matchedWithUserId, isPartyToListing])
+
+  const otherPartyWhatsapp = counterpart?.whatsapp ?? null
+
+  // The username is still readable on the row, so it renders immediately and
+  // does not blank out while the contact lookup is in flight.
   const otherPartyUsername = viewerIsPoster
     ? listing.matchedWithUsername
     : listing.postedByUsername
