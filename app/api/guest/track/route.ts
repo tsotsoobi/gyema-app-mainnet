@@ -13,9 +13,11 @@ export const runtime = "nodejs"
 // leaves, as hasDeliveryCode, so the tracker knows whether a code exists to
 // reveal. The plaintext lives behind the last-4 guard on
 // /api/guest/delivery-code and nowhere else.
-// Unverified drafts (phone_verified = false) never resolve publicly:
-// tracking IDs are only issued after OTP, so an unverified row is an
-// abandoned draft that should stay invisible and age out via TTL.
+// Unverified drafts (phone_verified = false) never resolve publicly. The flag
+// is set by the operator by hand in the Supabase dashboard after matching the
+// sender's WhatsApp message to the row; there is no OTP step and no route that
+// writes it. An unverified row is therefore either an unmatched draft or an
+// abandoned one, and either way it stays invisible and ages out via TTL.
 export async function GET(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get("trackingId")
   if (!raw) {

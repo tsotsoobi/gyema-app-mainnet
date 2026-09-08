@@ -3,9 +3,12 @@ import { createAdminClient } from "@/lib/supabase-admin"
 import { GUEST_AREAS, quoteCedis as computeQuoteCedis } from "@/lib/guest-pricing"
 
 // Guest create: the cedis dispatch rail. Writes an UNVERIFIED draft to
-// guest_jobs (phone_verified = false). A separate verify step flips the flag;
-// the dispatcher queue only reads phone_verified = true rows, so no courier is
-// ever assigned to an unverified job. This route never touches `listings`,
+// guest_jobs (phone_verified = false). Nothing in this codebase flips that
+// flag: the operator matches the sender's WhatsApp message to the row and
+// sets phone_verified = true by hand in the Supabase dashboard. There is no
+// OTP send or verify route, on either network. The dispatcher queue only
+// reads phone_verified = true rows, so no courier is ever assigned to a job
+// the operator has not matched. This route never touches `listings`,
 // never fires a 1 Pi connection-fee event: two rails, never blended.
 //
 // Runs with the service_role admin client because guest_jobs has RLS enabled
@@ -133,8 +136,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, reason: "insert_failed" }, { status: 500 })
     }
 
-    // Return only the tracking ID and status. The draft is inert until a
-    // separate verify step sets phone_verified = true.
+    // Return only the tracking ID and status. The draft is inert until the
+    // operator sets phone_verified = true by hand in the dashboard.
     return NextResponse.json({
       ok: true,
       trackingId: data.tracking_id,
