@@ -391,9 +391,7 @@ export function ListingDetailSheet({
     setTransitPending(true)
     setActionError(null)
     try {
-      const updated = await markInTransitAsync({
-        listingId: listing.id,
-      })
+      const updated = await markInTransitAsync({ listing })
       if (!updated) {
         setActionError("Could not mark as picked up. Please try again.")
         setTransitPending(false)
@@ -449,9 +447,7 @@ export function ListingDetailSheet({
     setCancelPending(true)
     setActionError(null)
     try {
-      const updated = await cancelMatchedListingAsync({
-        listingId: listing.id,
-      })
+      const updated = await cancelMatchedListingAsync({ listing })
       if (!updated) {
         setActionError(
           "Could not cancel this listing. It may have already been completed or expired.",
@@ -485,7 +481,7 @@ export function ListingDetailSheet({
     setCancelPending(true)
     setActionError(null)
     try {
-      const updated = await cancelOpenListingAsync({ listingId: listing.id })
+      const updated = await cancelOpenListingAsync({ listing })
       if (!updated) {
         setActionError(
           "Could not cancel this listing. Someone may have just accepted it.",

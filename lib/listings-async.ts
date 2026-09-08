@@ -1,6 +1,6 @@
 import { getAnonClient, getAuthedClient } from "./supabase"
 import { getSupabaseSession } from "./pi-network"
-import type { Listing, PackageSize } from "./listings"
+import type { Listing, ListingStatus, PackageSize } from "./listings"
 
 // Database row shape (snake_case, as stored in Supabase)
 type ListingRow = {
@@ -191,6 +191,66 @@ export async function getListingByTrackingIdAsync(
   if (!data) return null
 
   return fromRow(data as unknown as ListingRow)
+}
+
+// ---- Status transitions ----
+//
+// The three transitions below are server routes, not client writes.
+//
+// They were client writes until the grant baseline
+// (db/migrations/2026-09-07_grant_baseline.sql), which took UPDATE on every
+// listings column except the two archive ones away from authenticated. A
+// browser can no longer write status, and that is the fix rather than the
+// obstacle: the listings UPDATE policy is row level and cannot see WHICH
+// column a request touches, so any client able to write status could write any
+// status on any row the policy admitted it to. Expire somebody else's open
+// listing, mark a delivery picked up that nobody collected, walk a row to
+// completed.
+//
+// Nothing on this side of the wire names a party. mark-in-transit works out
+// which side is the traveller from the listing's own kind, server side, the
+// same way completion does.
+
+type StatusTransition = "cancel-open" | "cancel-matched" | "mark-in-transit"
+
+/**
+ * POST one status transition and return the status the server ended up in.
+ *
+ * Returns null on every failure, which the callers turn into a message. The
+ * refusals are not distinguished: "not your listing", "no such listing" and
+ * "state already moved" all come back the same way, and none of them should
+ * tell an unrelated caller anything about a row.
+ */
+async function postStatusTransition(
+  transition: StatusTransition,
+  listingId: string
+): Promise<ListingStatus | null> {
+  const session = getSupabaseSession()
+  if (!session?.accessToken) {
+    console.error(`${transition}: no active Supabase session`)
+    return null
+  }
+
+  try {
+    const res = await fetch(`/api/listings/${transition}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessToken: session.accessToken, listingId }),
+    })
+    const body = (await res.json()) as {
+      ok: boolean
+      status?: ListingStatus
+      reason?: string
+    }
+    if (!res.ok || !body.ok || !body.status) {
+      console.warn(`${transition} refused:`, body.reason)
+      return null
+    }
+    return body.status
+  } catch (err) {
+    console.error(`${transition} error:`, err)
+    return null
+  }
 }
 
 // ---- Counterparty contact ----
@@ -495,25 +555,11 @@ export async function confirmCompletionAsync(input: {
 // Past Trips/Deliveries section. This is a destructive action; UI must
 // confirm before calling.
 export async function cancelMatchedListingAsync(input: {
-  listingId: string
+  listing: Listing
 }): Promise<Listing | null> {
-  const { data, error } = await getAuthedClient()
-    .from("listings")
-    .update({ status: "expired" })
-    .eq("id", input.listingId)
-    // Race guard: only cancel if still in matched/in_transit. Prevents
-    // accidentally overwriting a listing that just transitioned to
-    // 'completed' between sheet render and button tap.
-    .in("status", ["matched", "in_transit"])
-    .select(LISTING_COLUMNS)
-    .single()
-
-  if (error) {
-    console.error("cancelMatchedListingAsync error:", error)
-    return null
-  }
-
-  return data ? fromRow(data as unknown as ListingRow) : null
+  const status = await postStatusTransition("cancel-matched", input.listing.id)
+  if (!status) return null
+  return { ...input.listing, status }
 }
 
 // Traveller marks the delivery as picked up: matched -> in_transit.
@@ -522,22 +568,11 @@ export async function cancelMatchedListingAsync(input: {
 // wrong state, mirroring cancelMatchedListingAsync. The row and Track-by-ID
 // reflect the new state immediately.
 export async function markInTransitAsync(input: {
-  listingId: string
+  listing: Listing
 }): Promise<Listing | null> {
-  const { data, error } = await getAuthedClient()
-    .from("listings")
-    .update({ status: "in_transit" })
-    .eq("id", input.listingId)
-    .eq("status", "matched")
-    .select(LISTING_COLUMNS)
-    .single()
-
-  if (error) {
-    console.error("markInTransitAsync error:", error)
-    return null
-  }
-
-  return data ? fromRow(data as unknown as ListingRow) : null
+  const status = await postStatusTransition("mark-in-transit", input.listing.id)
+  if (!status) return null
+  return { ...input.listing, status }
 }
 
 // Cancel an OPEN listing the current user posted, before anyone has accepted
@@ -550,22 +585,11 @@ export async function markInTransitAsync(input: {
 // between sheet render and tap, the row is now matched and this touches 0
 // rows, returning null, so we never yank an accepted (and paid) match.
 export async function cancelOpenListingAsync(input: {
-  listingId: string
+  listing: Listing
 }): Promise<Listing | null> {
-  const { data, error } = await getAuthedClient()
-    .from("listings")
-    .update({ status: "expired" })
-    .eq("id", input.listingId)
-    .eq("status", "open")
-    .select(LISTING_COLUMNS)
-    .single()
-
-  if (error) {
-    console.error("cancelOpenListingAsync error:", error)
-    return null
-  }
-
-  return data ? fromRow(data as unknown as ListingRow) : null
+  const status = await postStatusTransition("cancel-open", input.listing.id)
+  if (!status) return null
+  return { ...input.listing, status }
 }
 
 // Archive an expired listing from My Activity. This is a soft hide, not a
