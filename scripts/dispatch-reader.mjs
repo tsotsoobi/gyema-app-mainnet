@@ -144,7 +144,7 @@ const ageOf = (col) => `extract(epoch from (now() - ${col}))::bigint as ${col}_a
 // producing a quietly short report.
 // ---------------------------------------------------------------------------
 const REQUIRED_COLUMNS = {
-  guest_jobs: [
+  guest_jobs_dispatch: [
     "tracking_id",
     "status",
     "created_at",
@@ -158,8 +158,8 @@ const REQUIRED_COLUMNS = {
     "scheduled_date",
     "quote_cedis",
     "payment_type",
-    "sender_phone",
-    "recipient_phone",
+    "sender_phone_masked",
+    "recipient_phone_masked",
     "assigned_courier",
     "pickup_confirmed_at",
     "pickup_confirmed_by",
@@ -168,7 +168,7 @@ const REQUIRED_COLUMNS = {
     "delivery_code_attempts",
     "remit_paid_at",
   ],
-  listings: [
+  listings_dispatch: [
     "tracking_id",
     "kind",
     "status",
@@ -204,15 +204,19 @@ function toAmount(value) {
   return { ok: true, value: n, text: n.toFixed(2) }
 }
 
-// Phone numbers render masked except the last 4 digits, which is the only
-// part the operator uses (it is the sender side guard reference). A full
-// number is never printed by this script.
-function maskPhone(raw) {
-  if (raw === null || raw === undefined || String(raw).trim() === "") return "(none)"
-  const digits = String(raw).replace(/[^0-9]/g, "")
-  if (digits.length < 4) return "(unusable, fewer than 4 digits)"
-  return "*".repeat(digits.length - 4) + digits.slice(-4)
-}
+// Phone masking is NOT done here any more. The report reads
+// public.guest_jobs_dispatch, whose sender_phone_masked and
+// recipient_phone_masked columns are produced by
+// public.mask_phone_head_only in the database
+// (db/migrations/2026-09-07_dispatch_reader_masked_view.sql), and the
+// gyema_reader role holds no privilege on the raw phone columns at all.
+//
+// The mask covers the TAIL, not the head: "024*** (10 digits)". The earlier
+// version of this script masked to the trailing four digits, which are the
+// entire sender side guard on /api/guest/delivery-code,
+// /api/guest/confirm-pickup and /api/guest/confirm-delivery, so the report
+// printed a working credential for every job it listed. A masked value now
+// arrives already masked and this file has no way to unmask it.
 
 function humanAge(seconds) {
   const s = toInt(seconds)
@@ -286,7 +290,7 @@ const SECTIONS = [
     id: 1,
     title: "NEW JOBS, awaiting quote",
     subtitle: "Every pending_quote row. Unverified rows are flagged: WhatsApp not yet matched.",
-    table: "public.guest_jobs",
+    table: "public.guest_jobs_dispatch",
     where: "status = 'pending_quote'",
     order: "created_at asc",
     columns: [
@@ -301,7 +305,7 @@ const SECTIONS = [
       dateOf("scheduled_date"),
       "payment_type",
       "quote_cedis",
-      "sender_phone",
+      "sender_phone_masked",
     ],
     render: (r) => ({
       flags: r.phone_verified === true ? [] : ["UNVERIFIED, WhatsApp not yet matched"],
@@ -315,7 +319,7 @@ const SECTIONS = [
         ["scheduled_date", show(r.scheduled_date_txt)],
         ["payment_type", show(r.payment_type)],
         ["quote_cedis", toAmount(r.quote_cedis).text],
-        ["sender_phone", maskPhone(r.sender_phone)],
+        ["sender_phone", show(r.sender_phone_masked)],
       ],
     }),
   },
@@ -324,7 +328,7 @@ const SECTIONS = [
     id: 2,
     title: "VERIFIED, AWAITING QUOTE",
     subtitle: "Subset of section 1, not a second queue: the pending_quote rows whose phone is verified.",
-    table: "public.guest_jobs",
+    table: "public.guest_jobs_dispatch",
     where: "status = 'pending_quote' and phone_verified = true",
     order: "created_at asc",
     columns: [
@@ -339,7 +343,7 @@ const SECTIONS = [
       dateOf("scheduled_date"),
       "payment_type",
       "quote_cedis",
-      "sender_phone",
+      "sender_phone_masked",
     ],
     render: (r) => ({
       flags: [],
@@ -353,7 +357,7 @@ const SECTIONS = [
         ["scheduled_date", show(r.scheduled_date_txt)],
         ["payment_type", show(r.payment_type)],
         ["quote_cedis", toAmount(r.quote_cedis).text],
-        ["sender_phone", maskPhone(r.sender_phone)],
+        ["sender_phone", show(r.sender_phone_masked)],
       ],
     }),
   },
@@ -363,7 +367,7 @@ const SECTIONS = [
     title: "POSTED, NOT YET ACCEPTED",
     subtitle:
       "phone_verified is shown per row, not filtered on: app/api/guest/create/route.ts writes status posted with phone_verified false on the same insert, so unverified posted rows exist.",
-    table: "public.guest_jobs",
+    table: "public.guest_jobs_dispatch",
     where: "status = 'posted'",
     order: "created_at asc",
     columns: [
@@ -412,7 +416,7 @@ const SECTIONS = [
     title: "ACCEPTED, PICKUP NOT YET STAMPED",
     subtitle:
       "Waiting on the courier and the sender, not on the operator. No operator action is defined for this stage.",
-    table: "public.guest_jobs",
+    table: "public.guest_jobs_dispatch",
     where: "status = 'accepted' and pickup_confirmed_at is null",
     order: "created_at asc",
     columns: [
@@ -425,8 +429,8 @@ const SECTIONS = [
       "dropoff_area",
       "package_size",
       "quote_cedis",
-      "sender_phone",
-      "recipient_phone",
+      "sender_phone_masked",
+      "recipient_phone_masked",
     ],
     render: (r) => ({
       flags: [],
@@ -438,8 +442,8 @@ const SECTIONS = [
         ["route", route(r.pickup_area, r.dropoff_area)],
         ["package_size", show(r.package_size)],
         ["quote_cedis", toAmount(r.quote_cedis).text],
-        ["sender_phone", maskPhone(r.sender_phone)],
-        ["recipient_phone", maskPhone(r.recipient_phone)],
+        ["sender_phone", show(r.sender_phone_masked)],
+        ["recipient_phone", show(r.recipient_phone_masked)],
       ],
     }),
   },
@@ -448,7 +452,7 @@ const SECTIONS = [
     id: 5,
     title: "FLIP 1 READY",
     subtitle: "status accepted and pickup_confirmed_at is not null. The in_transit flip is now safe on these rows.",
-    table: "public.guest_jobs",
+    table: "public.guest_jobs_dispatch",
     where: "status = 'accepted' and pickup_confirmed_at is not null",
     order: "pickup_confirmed_at asc",
     columns: [
@@ -483,7 +487,7 @@ const SECTIONS = [
     id: 6,
     title: "IN TRANSIT, watching the handover",
     subtitle: `delivery_code_attempts is the courier's code entry count. ${MAX_CODE_ATTEMPTS} of ${MAX_CODE_ATTEMPTS} is the hard stop in app/api/guest/confirm-delivery/route.ts, at which the route returns code_locked.`,
-    table: "public.guest_jobs",
+    table: "public.guest_jobs_dispatch",
     where: "status = 'in_transit'",
     order: "updated_at asc",
     columns: [
@@ -497,7 +501,7 @@ const SECTIONS = [
       "assigned_courier",
       "pickup_area",
       "dropoff_area",
-      "recipient_phone",
+      "recipient_phone_masked",
     ],
     render: (r) => {
       const attempts = toInt(r.delivery_code_attempts)
@@ -521,7 +525,7 @@ const SECTIONS = [
           ["delivery_confirmed_by", show(r.delivery_confirmed_by)],
           ["assigned_courier", show(r.assigned_courier)],
           ["route", route(r.pickup_area, r.dropoff_area)],
-          ["recipient_phone", maskPhone(r.recipient_phone)],
+          ["recipient_phone", show(r.recipient_phone_masked)],
         ],
       }
     },
@@ -532,7 +536,7 @@ const SECTIONS = [
     title: "CLOSED TODAY",
     subtitle:
       "delivery_confirmed_by sender+courier_code is a fully stamped close. A bare sender is a legacy close, predating the delivery code. updated_at and delivery_confirmed_at are shown side by side: a hand applied close through the SQL editor moves updated_at only if the operator typed it, so a row can be closed today and absent from this filter.",
-    table: "public.guest_jobs",
+    table: "public.guest_jobs_dispatch",
     where: "status = 'delivered' and updated_at::date = current_date",
     order: "updated_at asc",
     columns: [
@@ -570,7 +574,7 @@ const SECTIONS = [
     id: 8,
     title: "REMIT OUTSTANDING",
     subtitle: "status delivered with remit_paid_at null. The total below is summed from the quote_cedis values printed above it and from nothing else.",
-    table: "public.guest_jobs",
+    table: "public.guest_jobs_dispatch",
     where: "status = 'delivered' and remit_paid_at is null",
     order: "updated_at asc",
     columns: [
@@ -627,7 +631,7 @@ const SECTIONS = [
     title: `PIONEER RAIL SIGHTINGS, last ${SIGHTING_WINDOW_HOURS}h, read only FYI`,
     subtitle:
       "The Pioneer rail is a separate rail. This is a list and nothing more: no analysis, and no number here is ever added to a Guest number.",
-    table: "public.listings",
+    table: "public.listings_dispatch",
     where: `created_at >= now() - interval '${SIGHTING_WINDOW_HOURS} hours'`,
     order: "created_at desc",
     columns: [
@@ -676,7 +680,7 @@ const CHECKS = [
     title: "UNTRIMMED FREE TEXT",
     subtitle:
       "Area values holding leading or trailing whitespace. The test is the regex match operator, not a call to trim: Postgres trim strips spaces only by default, while the JS .trim() that app/api/guest/create/route.ts has applied since commit 634a7cb on 21 August 2026 also strips tabs and newlines. Matching on backslash s reports what that fix would have caught rather than the narrower thing SQL trim would. Rows created before 634a7cb were inserted untrimmed.",
-    table: "public.guest_jobs",
+    table: "public.guest_jobs_dispatch",
     where: "pickup_area ~ '^\\s|\\s$' or dropoff_area ~ '^\\s|\\s$'",
     order: "created_at asc",
     columns: [
@@ -713,7 +717,7 @@ const CHECKS = [
     title: "STATUS VOCABULARY",
     subtitle:
       "Rows whose status is not among the values declared by the GuestJobStatus union at lib/guest-jobs.ts:7-13, mirrored in this file as DECLARED_GUEST_STATUSES. A finding means the declared type and the table disagree, and either side can be the wrong one. Known case: app/api/guest/create/route.ts:126 writes pending_quote, which the union does not carry, so pending_quote rows appear here until one side changes. The null arm is deliberate, not defensive: status not in (...) evaluates to null for a null status and would drop exactly the row most worth seeing.",
-    table: "public.guest_jobs",
+    table: "public.guest_jobs_dispatch",
     where: `status is null or status not in (${DECLARED_GUEST_STATUSES.map((s) => `'${s}'`).join(", ")})`,
     order: "status, created_at asc",
     columns: [
@@ -762,7 +766,7 @@ const CHECKS = [
     title: "DELIVERED WITHOUT BOTH STAMPS",
     subtitle:
       "status delivered where delivery_confirmed_by is not sender+courier_code, the composite lib/delivery-stamps.ts writes once both sides have signed off. Two buckets, kept apart rather than flattened, because only one of them is unambiguous. delivery_code_hash is not granted to gyema_reader, so this report cannot tell a coded job from an uncoded one and does not guess. delivery_code_attempts is shown but discriminates nothing: it is integer not null default 0, so every row carries 0 whether coded or not. is distinct from, not <>, because <> against a null delivery_confirmed_by yields null and would drop the row instead of reporting it.",
-    table: "public.guest_jobs",
+    table: "public.guest_jobs_dispatch",
     where: "status = 'delivered' and delivery_confirmed_by is distinct from 'sender+courier_code'",
     order: "updated_at asc",
     columns: [
@@ -841,7 +845,7 @@ const CHECKS = [
     title: "REMIT PAID ON A JOB THAT IS NOT DELIVERED",
     subtitle:
       "remit_paid_at is set on a row whose status is not delivered. The total below is summed from the quote_cedis values printed above it and from nothing else. is distinct from, not <>, because status <> 'delivered' evaluates to null for a null status and would drop the row instead of reporting it.",
-    table: "public.guest_jobs",
+    table: "public.guest_jobs_dispatch",
     where: "remit_paid_at is not null and status is distinct from 'delivered'",
     order: "remit_paid_at asc",
     columns: [
@@ -1379,23 +1383,28 @@ async function main() {
       console.error("")
       console.error("  These columns are required by the report and are not visible to this")
       console.error("  role. information_schema.columns is filtered by privilege, so each one")
-      console.error("  is either absent from the schema or never granted to gyema_reader:")
+      console.error("  is either absent from the view or never granted to gyema_reader:")
       console.error("")
       for (const name of missing) console.error(`    ${name}`)
       console.error("")
-      console.error("  Check the grants first:")
+      console.error("  The report reads two views, not the base tables. The usual cause is")
+      console.error("  that db/migrations/2026-09-07_dispatch_reader_masked_view.sql has not")
+      console.error("  been applied to THIS project yet. Check what the role can reach:")
       console.error("")
-      console.error("    select table_name, column_name, privilege_type")
-      console.error("      from information_schema.column_privileges")
+      console.error("    select table_name, privilege_type")
+      console.error("      from information_schema.role_table_grants")
       console.error("     where grantee = 'gyema_reader'")
-      console.error("     order by table_name, column_name;")
+      console.error("     order by table_name;")
+      console.error("")
+      console.error("  Expect exactly two rows, guest_jobs_dispatch and listings_dispatch,")
+      console.error("  both SELECT, and neither guest_jobs nor listings.")
       console.error("")
       process.exit(1)
     }
 
     console.log("")
     console.log(
-      `  Preflight passed: all ${REQUIRED_COLUMNS.guest_jobs.length + REQUIRED_COLUMNS.listings.length} required columns are readable.`
+      `  Preflight passed: all ${REQUIRED_COLUMNS.guest_jobs_dispatch.length + REQUIRED_COLUMNS.listings_dispatch.length} required columns are readable.`
     )
 
     const counts = []
@@ -1474,7 +1483,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
 
 // Exported for testing only. No application code imports this file.
 export {
-  maskPhone,
   humanAge,
   toAmount,
   describeEdgeWhitespace,
