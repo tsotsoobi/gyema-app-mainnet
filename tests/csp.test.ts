@@ -1,11 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { NextRequest } from "next/server"
 import { readFileSync } from "node:fs"
-import { buildCsp, cspHeaderName, cspIsEnforcing } from "@/lib/csp"
+import {
+  buildCsp,
+  cspHeaderName,
+  cspIsEnforcing,
+  PI_CONNECT_ORIGINS,
+  PI_FRAME_ANCESTORS,
+} from "@/lib/csp"
 import { middleware } from "@/middleware"
 
 // Phase 4, the risky half. A CSP that is wrong about the Pi SDK does not
-// degrade the app, it stops sign-in and payment.
+// degrade the app, it stops sign-in: enforcing the first version on Testnet
+// produced "Sign-in cancelled or failed", which is a rejected Pi.authenticate.
+//
+// The origins below are not guesses. They were read out of
+// https://sdk.minepi.com/pi-sdk.js: app-cdn.minepi.com is the default host
+// platform from getHostPlatformURL(), the two piappengine.com hosts are the
+// App Studio alternatives, and rpc.testnet.minepi.com and sandbox.minepi.com
+// appear as request targets. See lib/csp.ts for the full account.
 
 const NONCE = "dGVzdC1ub25jZS12YWx1ZQ=="
 
@@ -18,49 +31,140 @@ function directives(policy: string): Map<string, string> {
   )
 }
 
-describe("what the policy allows", () => {
-  const d = directives(buildCsp(NONCE))
+const d = directives(buildCsp(NONCE))
 
-  it("lets the Pi SDK load, connect and open its own frame", () => {
-    // Each of these is a thing that stops sign-in or payment if it is missing,
-    // rather than a thing that makes the page look wrong.
-    expect(d.get("script-src")).toContain("https://sdk.minepi.com")
-    expect(d.get("connect-src")).toContain("https://api.minepi.com")
-    expect(d.get("frame-src")).toContain("https://sdk.minepi.com")
+/**
+ * A CSP host source with a wildcard label matches a subdomain and NOT the
+ * apex: https://*.minepi.com does not admit https://minepi.com. Anywhere the
+ * apex matters it has to be listed too, and forgetting that is how a policy
+ * blocks the origin somebody told you the auth flow was on.
+ */
+function admits(directive: string, origin: string): boolean {
+  const sources = (d.get(directive) ?? "").split(/\s+/)
+  if (sources.includes(origin)) return true
+  const host = origin.replace(/^https?:\/\//, "")
+  return sources.some((source) => {
+    if (!source.startsWith("https://*.")) return false
+    const suffix = source.slice("https://*.".length)
+    // A wildcard matches a.b.suffix and b.suffix, never suffix itself.
+    return host.endsWith(`.${suffix}`)
+  })
+}
+
+describe("every origin the SDK names in its own source", () => {
+  // Each of these was read out of the SDK bundle. If a later SDK adds one,
+  // this list is where it goes, and the wildcard entries in lib/csp.ts are
+  // there so a new subdomain is not a fresh outage.
+  const sdkOrigins = [
+    "https://sdk.minepi.com",
+    "https://api.minepi.com",
+    "https://app-cdn.minepi.com",
+    "https://rpc.testnet.minepi.com",
+    "https://sandbox.minepi.com",
+    "https://appstudio-u7cm9zhmha0ruwv8.piappengine.com",
+    "https://appstudio-pobr34hy4r0qmyuu.staging.piappengine.com",
+  ]
+
+  for (const origin of sdkOrigins) {
+    it(`connect-src admits ${origin}`, () => {
+      // This is the directive a desktop pass cannot exercise: the SDK only
+      // calls these once a real Pi.authenticate is under way, and on desktop
+      // window.Pi is missing so it throws first.
+      expect(admits("connect-src", origin), origin).toBe(true)
+    })
+  }
+
+  it("connect-src admits the minepi.com apex, which the wildcard does not", () => {
+    expect((d.get("connect-src") ?? "")).toContain("https://minepi.com")
   })
 
-  it("lets the app reach Supabase over https and websockets", () => {
-    // The realtime client opens a socket even where the app does not use it.
-    expect(d.get("connect-src")).toContain("https://*.supabase.co")
-    expect(d.get("connect-src")).toContain("wss://*.supabase.co")
+  it("connect-src still admits Supabase over https and websockets", () => {
+    expect(admits("connect-src", "https://abcdefgh.supabase.co")).toBe(true)
+    expect((d.get("connect-src") ?? "")).toContain("wss://*.supabase.co")
   })
 
-  it("keeps the Pi Browser proxy as a framing ancestor", () => {
-    expect(d.get("frame-ancestors")).toContain("https://*.pinet.com")
-    expect(d.get("frame-ancestors")).toContain("'self'")
+  it("script-src admits the SDK bundle and the host platform", () => {
+    expect(admits("script-src", "https://sdk.minepi.com")).toBe(true)
+    expect(admits("script-src", "https://app-cdn.minepi.com")).toBe(true)
+  })
+})
+
+describe("who may frame this app", () => {
+  // The other directive a desktop pass cannot exercise: frame-ancestors only
+  // applies when the page IS framed, and on desktop it is not. In Pi Browser
+  // it always is.
+  const parents = [
+    "https://gyema3681.pinet.com",
+    "https://app-cdn.minepi.com",
+    "https://appstudio-u7cm9zhmha0ruwv8.piappengine.com",
+  ]
+
+  for (const parent of parents) {
+    it(`frame-ancestors admits ${parent}`, () => {
+      expect(admits("frame-ancestors", parent), parent).toBe(true)
+    })
+  }
+
+  it("names both apexes explicitly, since a wildcard does not reach them", () => {
+    const fa = d.get("frame-ancestors") ?? ""
+    expect(fa).toContain("https://minepi.com")
+    expect(fa).toContain("https://pinet.com")
+    expect(fa).toContain("'self'")
   })
 
-  it("carries the nonce and neither unsafe-inline nor unsafe-eval for scripts", () => {
+  it("does not admit an unrelated origin", () => {
+    expect(admits("frame-ancestors", "https://evil.example.com")).toBe(false)
+    expect(admits("connect-src", "https://evil.example.com")).toBe(false)
+  })
+
+  it("does not admit a lookalike domain", () => {
+    // minepi.com.evil.example and notminepi.com must both fail.
+    expect(admits("frame-ancestors", "https://minepi.com.evil.example")).toBe(false)
+    expect(admits("connect-src", "https://notminepi.com")).toBe(false)
+  })
+})
+
+describe("the directives the SDK source ruled out as the cause", () => {
+  it("frame-src and child-src agree, for engines that read only one", () => {
+    // The SDK creates no iframe: the only "iframe" string in the bundle is a
+    // key in a DOM attribute table, and it talks through
+    // window.parent.postMessage, which no directive governs. These are here
+    // for a future version rather than for today's flow.
+    expect(d.get("frame-src")).toBe(d.get("child-src"))
+    expect(admits("frame-src", "https://app-cdn.minepi.com")).toBe(true)
+  })
+
+  it("form-action is widened to the Pi origins rather than left at self", () => {
+    // Nothing submits a cross-origin form today, but this is the third
+    // directive a desktop pass cannot exercise, and narrow guesses are what
+    // broke sign-in.
+    expect(admits("form-action", "https://app-cdn.minepi.com")).toBe(true)
+    expect((d.get("form-action") ?? "")).toContain("'self'")
+  })
+})
+
+describe("what stays locked", () => {
+  it("keeps the nonce and refuses unsafe-inline and unsafe-eval for scripts", () => {
     const scriptSrc = d.get("script-src") ?? ""
     expect(scriptSrc).toContain(`'nonce-${NONCE}'`)
     expect(scriptSrc).not.toContain("'unsafe-inline'")
     expect(scriptSrc).not.toContain("'unsafe-eval'")
   })
 
-  it("locks the cheap half: no plugins, no base rewrite, no cross-origin form post", () => {
+  it("keeps the cheap half: no plugins, no base rewrite, default self", () => {
     expect(d.get("object-src")).toBe("'none'")
     expect(d.get("base-uri")).toBe("'self'")
-    expect(d.get("form-action")).toBe("'self'")
     expect(d.get("default-src")).toBe("'self'")
   })
 
   it("allows inline style deliberately, and says so", () => {
-    // The layout injects a style block for the font variables and Tailwind
-    // writes inline styles at runtime. Inline style is a defacement risk, not
-    // a code execution one, and frame-ancestors and base-uri close the routes
-    // that would turn it into one.
     expect(d.get("style-src")).toContain("'unsafe-inline'")
     expect(readFileSync("lib/csp.ts", "utf8")).toContain("is not an oversight")
+  })
+
+  it("exports the origin lists so they are asserted, not buried in a string", () => {
+    expect(PI_CONNECT_ORIGINS.length).toBeGreaterThan(4)
+    expect(PI_FRAME_ANCESTORS).toContain("'self'")
   })
 })
 
@@ -112,7 +216,6 @@ describe("the middleware", () => {
     const b = second.headers.get("x-nonce")
     expect(a).toBeTruthy()
     expect(a).not.toBe(b)
-    // The policy names the nonce the page will carry.
     const policy = first.headers.get("Content-Security-Policy-Report-Only") ?? ""
     expect(policy).toContain(`'nonce-${a}'`)
   })
@@ -130,10 +233,6 @@ describe("the middleware", () => {
 })
 
 describe("the prerender trap", () => {
-  // A statically prerendered page cannot carry a per-request nonce: the header
-  // names one, no tag on the page has it, and every script is blocked
-  // including the Pi SDK. Three of the four pages that load the SDK were
-  // prerendered before this commit.
   const layout = readFileSync("app/layout.tsx", "utf8")
 
   it("the layout that loads the Pi SDK renders per request", () => {
@@ -142,7 +241,6 @@ describe("the prerender trap", () => {
 
   it("both script tags in it carry the nonce", () => {
     expect(layout).toContain("nonce={nonce}")
-    // The SDK tag and the inline pi-init tag: two, not one.
     expect(layout.match(/nonce=\{nonce\}/g) ?? []).toHaveLength(2)
   })
 
@@ -151,8 +249,6 @@ describe("the prerender trap", () => {
   })
 
   it("says what removing the dynamic line would require", () => {
-    // Removing it silently returns the app to prerendering, where the nonce
-    // stops matching and the SDK stops loading.
     expect(layout).toContain("Do not remove it on its own")
   })
 })
