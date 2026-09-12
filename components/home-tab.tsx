@@ -138,8 +138,8 @@ function TravellerHome({
         capacity: capacity as PackageSize,
         pricePi: parseFloat(price),
         notes: notes.trim(),
-        postedById: user.uid,
-        postedByUsername: user.username,
+        // No postedById or postedByUsername. The route reads both from the
+        // session token, and its schema is strict, so sending them is a 400.
         whatsapp: whatsapp.trim(),
       })
       if (!listing) {
@@ -502,8 +502,7 @@ function SenderHome({
         toCity: (toCity === "Other" ? toOther.trim() : toCity.trim()),
         deliverBy,
         offerPi: parseFloat(offer),
-        postedById: user.uid,
-        postedByUsername: user.username,
+        // No postedById or postedByUsername. See the trip form above.
         whatsapp: whatsapp.trim(),
       })
       if (!listing) {

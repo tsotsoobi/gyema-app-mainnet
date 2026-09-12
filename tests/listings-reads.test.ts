@@ -112,25 +112,52 @@ describe("Pioneer reads name their columns", () => {
     expect(source).not.toMatch(/\.select\(\s*\)/)
   })
 
-  it("writes return the same column list, so an insert cannot read a phone back", async () => {
-    result = { data: { id: "l1", kind: "trip" }, error: null }
-    await listings.createTripAsync({
-      postedById: "pi-uid-1",
-      postedByUsername: "poster_one",
-      whatsapp: "0244123456",
-      fromCity: "Accra",
-      toCity: "Kumasi",
-      travelDate: "2026-10-01",
-      capacity: "small",
-      pricePi: 5,
-      notes: "",
-    })
-    const s = selects()
-    expect(s).toHaveLength(1)
-    for (const c of PHONE_COLUMNS) expect(s[0]).not.toContain(c)
-    // The number still goes IN on the insert: a poster writes their own.
-    const insert = calls.find((c) => c.method === "insert")
-    expect((insert?.args[0] as Record<string, unknown>).whatsapp).toBe("0244123456")
+  // This test used to assert the column list on the insert that createTripAsync
+  // ran through the authed client. There is no such insert any more: creation
+  // moved to app/api/listings/create so the server could own posted_by_id,
+  // posted_by_username, status, tracking_id and created_at (finding S-15).
+  // The column-list property moved with it and is asserted against the route in
+  // tests/routes/listings-create.test.ts. What belongs HERE is the boundary
+  // itself: this module must not write listings at all.
+  it("creation no longer touches the database from the client", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ ok: true, listing: { id: "l1", kind: "trip" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    )
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    try {
+      await listings.createTripAsync({
+        whatsapp: "0244123456",
+        fromCity: "Accra",
+        toCity: "Kumasi",
+        travelDate: "2026-10-01",
+        capacity: "small",
+        pricePi: 5,
+        notes: "",
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+
+    // No insert, no select, nothing asked of Supabase from the browser.
+    expect(calls.find((c) => c.method === "insert")).toBeUndefined()
+    expect(selects()).toHaveLength(0)
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe("/api/listings/create")
+    const sent = JSON.parse(String(init.body)) as Record<string, unknown>
+    // The number still goes in: a poster writes their own.
+    expect(sent.whatsapp).toBe("0244123456")
+    // Identity is not the client's to send. The route derives both from the
+    // session token and its schema is strict, so these would be a 400.
+    expect(sent).not.toHaveProperty("postedById")
+    expect(sent).not.toHaveProperty("postedByUsername")
+    expect(sent).not.toHaveProperty("status")
+    expect(sent).not.toHaveProperty("trackingId")
+    expect(sent).not.toHaveProperty("createdAt")
   })
 
   it("a mapped Listing carries no phone field at all", async () => {
