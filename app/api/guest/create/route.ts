@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { randomBytes } from "crypto"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { GUEST_AREAS, quoteCedis as computeQuoteCedis } from "@/lib/guest-pricing"
 import { GuestCreateBody, parseJsonBody } from "@/lib/schemas"
@@ -42,8 +43,27 @@ function cleanText(value: unknown): string | null {
   return trimmed === "" ? null : trimmed
 }
 
+/**
+ * GYM- plus six upper-case hex characters, from a CSPRNG.
+ *
+ * The shape is unchanged, so nothing downstream moves: the regex in
+ * lib/schemas.ts, the deep links, the dispatch templates and every ID already
+ * stored all still match. What changed is the source. It was
+ * Math.random().toString(16), which is finding S-17.
+ *
+ * Math.random is seeded per process and its output is predictable from prior
+ * output. That matters more here than it would on most identifiers, because a
+ * GYM- code is the entry ticket to every public guest route: the tracker
+ * resolves one, and all three sender-side routes take one as half their guard,
+ * the other half being four digits. An attacker who can narrow the ID space
+ * from sixteen million to a handful has done the expensive part of the work.
+ *
+ * The Pioneer rail was moved to randomBytes when creation became a server
+ * route (app/api/listings/create). This is the same one-line change on the
+ * rail that always minted server-side and was simply missed.
+ */
 function mintGymCode(): string {
-  return `GYM-${Math.random().toString(16).slice(2, 8).toUpperCase()}`
+  return `GYM-${randomBytes(3).toString("hex").toUpperCase()}`
 }
 
 // Collision-safe: the guest rail is the only new entrant to the shared GYM

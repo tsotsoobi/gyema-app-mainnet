@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { readFileSync } from "node:fs"
 import { NextRequest } from "next/server"
 import { AdminMock, adminModule, get, postJson } from "../helpers/admin-mock"
 
@@ -429,5 +430,74 @@ describe("POST /api/guest/confirm-delivery", () => {
     expect(mock.calls.find((c) => c.method === "rpc")?.args[0]).toBe(
       "guest_bump_delivery_code_attempts"
     )
+  })
+})
+
+// Finding S-17, the guest half. The Pioneer rail moved to randomBytes when
+// creation became a server route; this rail always minted server side and was
+// simply missed. A GYM- ID is the entry ticket to every public guest route, so
+// a predictable one is the front half of an attack on the sender-side guards.
+describe("the tracking id the guest rail mints", () => {
+  it("keeps the GYM- plus six hex shape, so nothing downstream moves", async () => {
+    mock.queue(
+      { data: null, error: null },
+      { data: null, error: null },
+      { data: { tracking_id: JOB, status: "pending_quote" }, error: null }
+    )
+    await create.POST(
+      postJson("http://localhost/x", {
+        pickupArea: "Anywhere",
+        dropoffArea: "Anywhere else",
+        packageSize: "small",
+        senderPhone: "0244123456",
+        offList: true,
+      }) as never
+    )
+    const insert = mock.calls.find((c) => c.method === "insert")
+    const minted = String((insert?.args[0] as Record<string, unknown>).tracking_id)
+    // The same shape lib/schemas.ts accepts and every stored ID already has.
+    expect(minted).toMatch(/^GYM-[0-9A-F]{6}$/)
+  })
+
+  it("does not repeat itself across many mints", async () => {
+    // Not a randomness test, which a unit test cannot do. This catches the
+    // failure that would actually matter: a mint that is constant, or seeded
+    // per call from something like a truncated timestamp.
+    const seen = new Set<string>()
+    for (let i = 0; i < 40; i++) {
+      mock.calls = []
+      mock.results = []
+      mock.queue(
+        { data: null, error: null },
+        { data: null, error: null },
+        { data: { tracking_id: JOB, status: "pending_quote" }, error: null }
+      )
+      await create.POST(
+        postJson("http://localhost/x", {
+          pickupArea: "Anywhere",
+          dropoffArea: "Anywhere else",
+          packageSize: "small",
+          senderPhone: "0244123456",
+          offList: true,
+        }) as never
+      )
+      const insert = mock.calls.find((c) => c.method === "insert")
+      seen.add(String((insert?.args[0] as Record<string, unknown>).tracking_id))
+    }
+    expect(seen.size).toBe(40)
+  })
+
+  it("mints from the CSPRNG, not from Math.random", () => {
+    // Asserted against the source because the property is about WHERE the
+    // bytes come from, and no black-box test on 40 samples can tell a CSPRNG
+    // from Math.random. The same reasoning tests/csp.test.ts uses when it
+    // asserts a comment is present.
+    const source = readFileSync("app/api/guest/create/route.ts", "utf8")
+    const code = source
+      .split(/\r?\n/)
+      .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
+      .join("\n")
+    expect(code).toContain("randomBytes")
+    expect(code).not.toContain("Math.random")
   })
 })

@@ -185,10 +185,16 @@ export const LIMITS = {
    * the high-water mark for real use and it is nowhere near twelve a minute.
    *
    * What this is actually for is enumeration. A GYM- ID is six characters and
-   * is minted with Math.random (finding S-17), so it is the entry ticket to
-   * every public guest route and it is guessable in principle. Twelve lookups
-   * a minute against a space of roughly sixteen million makes discovery by
-   * scanning pointless from one address without inconveniencing anybody.
+   * is the entry ticket to every public guest route, so scanning for valid
+   * ones is the front half of any attack on the sender-side guards. Twelve
+   * lookups a minute against a space of roughly sixteen million makes that
+   * pointless from one address without inconveniencing anybody.
+   *
+   * This used to say the ID was minted with Math.random, which was finding
+   * S-17 and was the reason the number here mattered more than it looked.
+   * Both rails now mint from randomBytes, so the ID is no longer predictable
+   * and this limit is defence in depth rather than the thing standing between
+   * a guesser and a valid code.
    */
   guest_track: { limit: 120, window: "10 m", onError: "open" },
 
