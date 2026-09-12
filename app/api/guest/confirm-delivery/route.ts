@@ -5,6 +5,7 @@ import { hashDeliveryCode, hashesMatch } from "@/lib/delivery-code"
 import { STAMP_SENDER, STAMP_COURIER_CODE, hasStamp } from "@/lib/delivery-stamps"
 import { verifyLast4 } from "@/lib/last4-guard"
 import { GuestConfirmDeliveryBody, parseJsonBody } from "@/lib/schemas"
+import { checkLimit, ipIdentifier, retryAfterHeaders } from "@/lib/rate-limit"
 export const runtime = "nodejs"
 
 // Delivery sign-off for guest jobs (handshake Part 2, closing end).
@@ -41,6 +42,25 @@ export const runtime = "nodejs"
 const MAX_CODE_ATTEMPTS = 5
 
 export async function POST(req: NextRequest) {
+  // The shared last-4 bucket, checked before the body is read so both paths
+  // through this route are covered by one budget: a hundred and twenty an
+  // hour per address across all three sender-side routes, because they are one
+  // handshake by one person. The courier path shares it rather than getting
+  // its own, since a courier and a sender behind the same carrier NAT are
+  // indistinguishable from here and the number is set well above either.
+  //
+  // Fails OPEN on a Redis error. Both paths already carry a permanent attempt
+  // ceiling in Postgres (ten on the last-4 side, five on the code side), and
+  // those are the controls. Refusing a courier at a door because a cache is
+  // unreachable would cost more than it protects.
+  const limit = await checkLimit("guest_last4", ipIdentifier(req))
+  if (!limit.ok) {
+    return NextResponse.json(
+      { ok: false, reason: "rate_limited" },
+      { status: 429, headers: retryAfterHeaders(limit.retryAfterSeconds) }
+    )
+  }
+
   // GuestConfirmDeliveryBody carries the discriminator rule: `via` must be one
   // of the two stamps, and it decides whether last4 or code is required. There
   // is no default, because inferring one would put the discriminator back into

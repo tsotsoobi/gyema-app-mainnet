@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { GUEST_AREAS, quoteCedis as computeQuoteCedis } from "@/lib/guest-pricing"
 import { GuestCreateBody, parseJsonBody } from "@/lib/schemas"
+import { checkLimit, ipIdentifier, phoneIdentifier, retryAfterHeaders } from "@/lib/rate-limit"
+import { isTurnstileConfigured, verifyTurnstileToken } from "@/lib/turnstile"
 
 // Guest create: the cedis dispatch rail. Writes an UNVERIFIED draft to
 // guest_jobs (phone_verified = false). Nothing in this codebase flips that
@@ -65,6 +67,37 @@ export async function POST(request: NextRequest) {
   if (process.env.NEXT_PUBLIC_GUEST_SEND_ENABLED !== "true") {
     return NextResponse.json({ ok: false, reason: "disabled" }, { status: 403 })
   }
+
+  // Two rate-limit keys guard this route and they are checked at different
+  // points, which is the whole design rather than an accident of ordering.
+  //
+  // The ADDRESS key is checked here, before the body is read, so a flood of
+  // malformed payloads is refused without being parsed. It is deliberately
+  // loose (twenty an hour) because Ghanaian mobile data is heavily NAT-shared
+  // and this is the one page reached from an ordinary browser rather than from
+  // Pi Browser: a tight number here would refuse a real sender because a
+  // stranger on the same carrier posted first.
+  //
+  // The SENDER PHONE key is checked further down, once the body has been
+  // validated, and it is the tight one (four an hour). It is per person rather
+  // than per network path, so NAT does not blunt it.
+  //
+  // Both FAIL CLOSED on a Redis error. This is the only route in the app where
+  // an unauthenticated stranger writes a row, so a limiter that cannot count
+  // means the flood control is simply gone. The cost is stated plainly: while
+  // Upstash is unreachable, guest posting is refused, and a sender is told to
+  // try again shortly rather than being quietly let through unlimited. A
+  // deployment with no Upstash credentials at all is a different case and runs
+  // unlimited, exactly as it did before (lib/rate-limit.ts, limiterConfigured).
+  const ip = ipIdentifier(request)
+  const ipLimit = await checkLimit("guest_create_ip", ip)
+  if (!ipLimit.ok) {
+    return NextResponse.json(
+      { ok: false, reason: ipLimit.reason },
+      { status: 429, headers: retryAfterHeaders(ipLimit.retryAfterSeconds) }
+    )
+  }
+
   try {
     // GuestCreateBody does the trimming, the required fields, the enums, the
     // length caps and the phone shape. This is the only route in the app an
@@ -97,6 +130,44 @@ export async function POST(request: NextRequest) {
     // deliberately bypass it and route to a human quote.
     if (!offList && (!(pickupArea in GUEST_AREAS) || !(dropoffArea in GUEST_AREAS))) {
       return NextResponse.json({ ok: false, reason: "unbounded_city" }, { status: 400 })
+    }
+
+    // The bot check, and it runs ONLY when both Turnstile keys are set on this
+    // deployment. Either one missing and this block is skipped entirely, so a
+    // half-configured environment behaves exactly as it did before Turnstile
+    // existed rather than refusing every post. The reasoning for that default
+    // is written out in lib/turnstile.ts.
+    //
+    // Placed after validation and before the tracking-ID generation, which is
+    // where the expensive work starts: a challenge is checked before up to
+    // eight pairs of collision lookups are spent on the caller.
+    if (isTurnstileConfigured()) {
+      const verdict = await verifyTurnstileToken(parsed.data.turnstileToken, ip)
+      if (!verdict.ok) {
+        // One reason for all three failure modes. A caller does not need to
+        // know whether their token was missing, replayed, or whether
+        // Cloudflare was unreachable, and telling them which would let a
+        // script tell a rejected challenge apart from an outage and wait for
+        // the outage.
+        console.warn("[gyema] guest create turnstile refusal:", verdict.reason)
+        return NextResponse.json({ ok: false, reason: "bot_check_failed" }, { status: 403 })
+      }
+    }
+
+    // The tight, per-person half of the rate limit. Checked here rather than
+    // at the top because the phone number is not known until the body has been
+    // validated, and checked before the insert so a burst costs no rows.
+    //
+    // The identifier is a truncated hash of the national digits, never the
+    // number itself: a rate-limit key ends up in an Upstash console and in
+    // support screenshots. See phoneIdentifier for why that is hygiene rather
+    // than protection.
+    const phoneLimit = await checkLimit("guest_create_phone", phoneIdentifier(senderPhone))
+    if (!phoneLimit.ok) {
+      return NextResponse.json(
+        { ok: false, reason: phoneLimit.reason },
+        { status: 429, headers: retryAfterHeaders(phoneLimit.retryAfterSeconds) }
+      )
     }
 
     const admin = createAdminClient()

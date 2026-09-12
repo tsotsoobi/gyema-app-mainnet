@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { NextRequest } from "next/server"
-import { AdminMock, adminModule, postJson } from "../helpers/admin-mock"
+import { AdminMock, adminModule, get, postJson } from "../helpers/admin-mock"
 
 const mock = new AdminMock()
 vi.mock("@/lib/supabase-admin", () => adminModule(mock))
@@ -156,7 +156,7 @@ describe("GET /api/guest/open", () => {
       data: [{ tracking_id: JOB, pickup_area: "Osu", dropoff_area: "Madina" }],
       error: null,
     })
-    const res = await open.GET()
+    const res = await open.GET(get("http://localhost/api/guest/open") as never)
     expect(res.status).toBe(200)
     const trace = mock.trace()
     expect(trace).toContain('eq("phone_verified", true)')

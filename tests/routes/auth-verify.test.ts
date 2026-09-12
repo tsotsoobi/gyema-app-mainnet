@@ -6,7 +6,17 @@ const mock = new AdminMock()
 vi.mock("@/lib/supabase-admin", () => adminModule(mock))
 // waitUntil only exists inside a Vercel function context. In tests it is a
 // pass-through so the observability writes neither run nor throw.
-vi.mock("@vercel/functions", () => ({ waitUntil: (p: Promise<unknown>) => p }))
+//
+// ipAddress is the real helper's job
+// of reading x-real-ip, which Vercel Proxy sets and a Request built in a test
+// does not carry: returning undefined puts these tests on the "no address"
+// path, which is the correct shape for a call that did not come through the
+// proxy.
+vi.mock("@vercel/functions", () => ({
+  waitUntil: (p: Promise<unknown>) => p,
+  ipAddress: (input: Request | { headers: Headers }) =>
+    ("headers" in input ? input.headers : input).get("x-real-ip") ?? undefined,
+}))
 vi.mock("@/lib/pi-platform", () => ({
   verifyPiAccessToken: vi.fn(async (token: string) =>
     token === "good-pi-token" ? { uid: "pi-uid-1", username: "pioneer_one" } : null

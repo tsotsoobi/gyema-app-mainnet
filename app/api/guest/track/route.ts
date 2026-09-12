@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { parseQuery, trackingId as trackingIdSchema } from "@/lib/schemas"
+import { checkLimit, ipIdentifier, retryAfterHeaders } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
@@ -20,6 +21,28 @@ export const runtime = "nodejs"
 // writes it. An unverified row is therefore either an unmatched draft or an
 // abandoned one, and either way it stays invisible and ages out via TTL.
 export async function GET(req: NextRequest) {
+  // A hundred and twenty per ten minutes per address, failing open on a Redis
+  // error. Nothing polls this route, so every call is a person pressing Track
+  // or opening a deep link; the limit exists to make scanning for valid GYM-
+  // IDs pointless rather than to ration lookups.
+  //
+  // Keyed on the address ONLY, never on the tracking ID, and that is a
+  // decision rather than an omission. A per-job window here would let anyone
+  // who knows a tracking ID spend it and leave the real sender unable to look
+  // up their own delivery. The job is the victim in that design, not the
+  // attacker.
+  const limit = await checkLimit("guest_track", ipIdentifier(req))
+  if (!limit.ok) {
+    // A distinct status and reason, because the client must not read this as
+    // "no such job": the tracker turns a 404 into "not found", and telling a
+    // waiting sender their delivery does not exist is the worst possible way
+    // to report a rate limit.
+    return NextResponse.json(
+      { error: "Too many lookups", reason: "rate_limited" },
+      { status: 429, headers: retryAfterHeaders(limit.retryAfterSeconds) }
+    )
+  }
+
   const parsed = parseQuery(req.nextUrl.searchParams.get("trackingId"), trackingIdSchema)
   if (!parsed.ok) return parsed.response
   const trackingId = parsed.data

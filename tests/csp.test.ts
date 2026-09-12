@@ -143,6 +143,31 @@ describe("the directives the SDK source ruled out as the cause", () => {
   })
 })
 
+describe("Cloudflare Turnstile", () => {
+  const TURNSTILE = "https://challenges.cloudflare.com"
+
+  // One origin, four directives, and the widget silently never appears if any
+  // one of them is missing. The loader is a script, the challenge renders in an
+  // iframe from the same host, and the widget calls back to it.
+  for (const directive of ["script-src", "frame-src", "child-src", "connect-src"]) {
+    it(`${directive} admits the Turnstile origin`, () => {
+      expect(admits(directive, TURNSTILE)).toBe(true)
+    })
+  }
+
+  // The policy is built per request in middleware and the site key is a
+  // build-time bake, so a conditional origin would mean a redeploy changed the
+  // header and the widget in two steps rather than one.
+  it("names the origin whether or not Turnstile is configured", () => {
+    vi.stubEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", "")
+    expect(buildCsp(NONCE)).toContain(TURNSTILE)
+  })
+
+  it("does not admit a lookalike of the Turnstile origin", () => {
+    expect(admits("script-src", "https://challenges.cloudflare.com.evil.test")).toBe(false)
+  })
+})
+
 describe("what stays locked", () => {
   it("keeps the nonce and refuses unsafe-inline and unsafe-eval for scripts", () => {
     const scriptSrc = d.get("script-src") ?? ""

@@ -115,6 +115,24 @@ const PI_BROWSER_APEX = "https://pinet.com"
  */
 const PI_APP_ENGINE = "https://*.piappengine.com"
 
+/**
+ * Cloudflare Turnstile: the bot check on the guest post form.
+ *
+ * One origin serves all three things it needs, and each one is a different
+ * directive, which is why it appears four times below rather than once:
+ * the api.js loader is script-src, the challenge renders in an iframe from the
+ * same host so it is frame-src and child-src, and the widget reports back to
+ * it, so it is connect-src too. A policy that names it in only some of those
+ * fails in a way that looks like the widget simply never appears.
+ *
+ * Named unconditionally rather than only when the keys are set. The policy is
+ * built per request in middleware and the site key is a build-time bake, so
+ * making the policy conditional would mean a redeploy could change the header
+ * and the widget in two steps rather than one. Naming an origin nothing loads
+ * from costs nothing.
+ */
+const TURNSTILE = "https://challenges.cloudflare.com"
+
 /** Supabase. The project host differs per network, so the wildcard is the point. */
 const SUPABASE_HTTPS = "https://*.supabase.co"
 const SUPABASE_WSS = "wss://*.supabase.co"
@@ -154,7 +172,7 @@ export function buildCsp(nonce: string): string {
 
     // The SDK bundle, and app-cdn in case a later version loads a second
     // chunk from the host platform. No 'unsafe-inline', no 'unsafe-eval'.
-    `script-src 'self' 'nonce-${nonce}' ${PI_SDK} ${PI_MINEPI}`,
+    `script-src 'self' 'nonce-${nonce}' ${PI_SDK} ${PI_MINEPI} ${TURNSTILE}`,
 
     // Inline style is deliberate and is not an oversight: the layout injects a
     // style block for the Geist font variables and Tailwind writes inline
@@ -167,14 +185,14 @@ export function buildCsp(nonce: string): string {
     `font-src 'self' data:`,
 
     // The directive that was missing the origins the SDK actually calls.
-    `connect-src 'self' ${SUPABASE_HTTPS} ${SUPABASE_WSS} ${PI_CONNECT_ORIGINS.join(" ")}`,
+    `connect-src 'self' ${SUPABASE_HTTPS} ${SUPABASE_WSS} ${TURNSTILE} ${PI_CONNECT_ORIGINS.join(" ")}`,
 
     // The SDK creates no iframe of its own (source, above), so these are here
     // for a future version rather than for today's flow. Both are named
     // because frame-src falls back to child-src, and an older engine reading
     // only child-src should get the same answer.
-    `frame-src 'self' ${PI_SDK} ${PI_MINEPI} ${PI_MINEPI_APEX} ${PI_APP_ENGINE}`,
-    `child-src 'self' ${PI_SDK} ${PI_MINEPI} ${PI_MINEPI_APEX} ${PI_APP_ENGINE}`,
+    `frame-src 'self' ${TURNSTILE} ${PI_SDK} ${PI_MINEPI} ${PI_MINEPI_APEX} ${PI_APP_ENGINE}`,
+    `child-src 'self' ${TURNSTILE} ${PI_SDK} ${PI_MINEPI} ${PI_MINEPI_APEX} ${PI_APP_ENGINE}`,
 
     // Who may frame US. Inert on desktop, load-bearing in Pi Browser.
     `frame-ancestors ${PI_FRAME_ANCESTORS.join(" ")}`,

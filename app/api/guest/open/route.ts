@@ -1,11 +1,24 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
+import { checkLimit, ipIdentifier, retryAfterHeaders } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
 // Open guest jobs for the Traveller board. Sanitized: quote and route only,
 // never phones, landmarks, or names. Those reveal only on accept.
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Sixty per ten minutes per address, and it fails open on a Redis error.
+  // The payload carries nothing sensitive, so the only thing a limit protects
+  // here is the database read: refusing a courier their job board to save a
+  // query would be the wrong trade.
+  const limit = await checkLimit("guest_open", ipIdentifier(request))
+  if (!limit.ok) {
+    return NextResponse.json(
+      { ok: false, reason: "rate_limited" },
+      { status: 429, headers: retryAfterHeaders(limit.retryAfterSeconds) }
+    )
+  }
+
   try {
     const admin = createAdminClient()
     const { data, error } = await admin

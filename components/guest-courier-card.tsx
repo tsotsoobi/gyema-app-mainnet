@@ -64,6 +64,13 @@ export function GuestCourierCard({ job }: { job: CourierGuestJob }) {
       setCodeError("Sign in with Pi as the courier who accepted this delivery.")
     } else if (result.reason === "not_confirmable" || result.reason === "state_changed") {
       setCodeError("This delivery cannot be confirmed right now. Reopen the tab to refresh.")
+    } else if (result.reason === "rate_limited" || result.reason === "limiter_unavailable") {
+      // Not a wrong code, and the courier is at a door, so say so. None of
+      // their five attempts was spent: the per-job counter only moves on a
+      // code that was actually checked and found wrong.
+      setCodeError(
+        "Too many attempts from your network just now. No tries were used. Please wait a minute and try again."
+      )
     } else if (result.reason === "network") {
       setCodeError("Network problem. Please try again.")
     } else {

@@ -139,6 +139,23 @@ export const piAmount = z
   .nonnegative()
   .max(10_000, { message: "bad_amount" })
 
+/**
+ * A solved Cloudflare Turnstile challenge, on its way to be verified.
+ *
+ * Opaque to us and never parsed here: the only authority on whether it is real
+ * is Cloudflare's siteverify endpoint (lib/turnstile.ts). What this does is
+ * bound it, for the same reason every other field is bounded. Cloudflare
+ * documents tokens as at most 2048 characters, so anything longer is not a
+ * token and there is no reason to carry it as far as an outbound request.
+ *
+ * OPTIONAL in the schema and required by the route, and only when both
+ * Turnstile keys are set on the deployment. Making it required here would
+ * refuse every guest post on any environment without Turnstile configured,
+ * which includes local development and is the outage lib/turnstile.ts is
+ * written to avoid.
+ */
+export const turnstileToken = z.string().trim().min(1).max(2048)
+
 // ---------------------------------------------------------------------------
 // Bodies
 // ---------------------------------------------------------------------------
@@ -243,6 +260,7 @@ export const GuestCreateBody = z.object({
   scheduledDate: optional(isoDate),
   paymentType: optional(paymentType),
   offList: optional(z.boolean()),
+  turnstileToken: optional(turnstileToken),
 })
 
 export const GuestAcceptBody = z.object({

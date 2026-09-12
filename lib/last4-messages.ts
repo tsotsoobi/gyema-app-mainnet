@@ -53,6 +53,19 @@ export function last4ErrorMessage(
     case "state_changed":
       return "This delivery cannot be confirmed right now. Refreshing status."
 
+    // A rate limit, not a wrong answer, and the difference has to reach the
+    // sender. "Those digits do not match" would send someone standing at a
+    // door hunting for a mistake in a number that was correct, and every
+    // retry they make while hunting extends the window they are waiting on.
+    // Nothing was counted against the delivery here: the per-job ceiling only
+    // moves on a genuinely wrong answer.
+    case "rate_limited":
+    case "limiter_unavailable":
+      return (
+        "Too many attempts from your network just now. Nothing was counted " +
+        "against this delivery. Please wait a minute and try again."
+      )
+
     case "network":
       return "Network problem. Please try again."
 
