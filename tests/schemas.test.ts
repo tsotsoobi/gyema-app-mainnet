@@ -188,10 +188,12 @@ describe("every route validates its body", () => {
   const routes = routeFiles("app/api")
 
   it("finds every route, so a new one cannot skip this file", () => {
-    // 18 today: the original 15 plus the three status transitions. The count
-    // is asserted so adding a route without adding it to this sweep fails
-    // here rather than going unvalidated.
-    expect(routes.length).toBe(18)
+    // 19 today: the original 15, the three status transitions, and
+    // listings/create, which moved creation off the client so the server could
+    // own posted_by_id, posted_by_username, status, tracking_id and created_at
+    // (finding S-15). The count is asserted so adding a route without adding it
+    // to this sweep fails here rather than going unvalidated.
+    expect(routes.length).toBe(19)
   })
 
   for (const file of routes) {

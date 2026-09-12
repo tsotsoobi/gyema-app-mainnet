@@ -317,12 +317,63 @@ export async function getCounterpartContactAsync(
 // the Pioneer's JWT so RLS policies can verify ownership via the
 // posted_by_id / matched_with_user_id columns.
 
-// TODO(v2): switch id/trackingId/createdAt to Postgres-generated defaults
-// (gen_random_uuid() and now()) once we add proper migrations.
+// Creation is a SERVER ROUTE, not a client insert.
+//
+// It used to be an INSERT through the authed client, which meant the browser
+// composed the whole row: posted_by_id, posted_by_username, status,
+// tracking_id, created_at and the matched_with_* columns were all whatever was
+// sent. The database policy pinned posted_by_id and nothing else, because the
+// grant behind it was table-wide (finding S-15).
+//
+// app/api/listings/create now owns every one of those fields, and
+// authenticated holds no INSERT on listings at all, so this is not the
+// preferred path, it is the only one. The TODO that used to sit here, about
+// moving id, trackingId and createdAt to Postgres defaults, is answered: the
+// server sets them, which is better than a default because the tracking ID has
+// to be checked against the guest rail as well.
+
+type CreatedListingResponse = {
+  ok: boolean
+  listing?: ListingRow
+  reason?: string
+}
+
+/**
+ * POST a new listing and map the row back.
+ *
+ * The caller supplies the contents of the listing and nothing about who is
+ * posting it. There is deliberately no postedById or postedByUsername
+ * parameter any more: the route reads both from the session token, and the
+ * schema is strict, so sending them is a 400 rather than a value that is
+ * quietly ignored.
+ */
+async function createListingAsync(
+  payload: Record<string, unknown>
+): Promise<Listing | null> {
+  const session = getSupabaseSession()
+  if (!session?.accessToken) {
+    console.error("createListingAsync: no active session")
+    return null
+  }
+  try {
+    const res = await fetch("/api/listings/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessToken: session.accessToken, ...payload }),
+    })
+    const body = (await res.json()) as CreatedListingResponse
+    if (!res.ok || !body.ok || !body.listing) {
+      console.error("createListingAsync failed:", res.status, body.reason)
+      return null
+    }
+    return fromRow(body.listing)
+  } catch (err) {
+    console.error("createListingAsync error:", err)
+    return null
+  }
+}
 
 export async function createTripAsync(input: {
-  postedById: string
-  postedByUsername: string
   whatsapp: string
   fromCity: string
   toCity: string
@@ -331,44 +382,10 @@ export async function createTripAsync(input: {
   pricePi: number
   notes: string
 }): Promise<Listing | null> {
-  const id = `listing_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-  const trackingId = `GYM-${Math.random().toString(16).slice(2, 8).toUpperCase()}`
-  const createdAt = new Date().toISOString()
-
-  const row = {
-    id,
-    kind: "trip" as const,
-    from_city: input.fromCity,
-    to_city: input.toCity,
-    posted_by_id: input.postedById,
-    posted_by_username: input.postedByUsername,
-    whatsapp: input.whatsapp,
-    status: "open" as const,
-    tracking_id: trackingId,
-    created_at: createdAt,
-    travel_date: input.travelDate,
-    capacity: input.capacity,
-    price_pi: input.pricePi,
-    notes: input.notes,
-  }
-
-  const { data, error } = await getAuthedClient()
-    .from("listings")
-    .insert(row)
-    .select(LISTING_COLUMNS)
-    .single()
-
-  if (error) {
-    console.error("createTripAsync error:", error)
-    return null
-  }
-
-  return fromRow(data as unknown as ListingRow)
+  return createListingAsync({ kind: "trip", ...input })
 }
 
 export async function createPackageAsync(input: {
-  postedById: string
-  postedByUsername: string
   whatsapp: string
   fromCity: string
   toCity: string
@@ -377,39 +394,7 @@ export async function createPackageAsync(input: {
   description: string
   offerPi: number
 }): Promise<Listing | null> {
-  const id = `listing_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-  const trackingId = `GYM-${Math.random().toString(16).slice(2, 8).toUpperCase()}`
-  const createdAt = new Date().toISOString()
-
-  const row = {
-    id,
-    kind: "package" as const,
-    from_city: input.fromCity,
-    to_city: input.toCity,
-    posted_by_id: input.postedById,
-    posted_by_username: input.postedByUsername,
-    whatsapp: input.whatsapp,
-    status: "open" as const,
-    tracking_id: trackingId,
-    created_at: createdAt,
-    deliver_by: input.deliverBy,
-    size: input.size,
-    description: input.description,
-    offer_pi: input.offerPi,
-  }
-
-  const { data, error } = await getAuthedClient()
-    .from("listings")
-    .insert(row)
-    .select(LISTING_COLUMNS)
-    .single()
-
-  if (error) {
-    console.error("createPackageAsync error:", error)
-    return null
-  }
-
-  return fromRow(data as unknown as ListingRow)
+  return createListingAsync({ kind: "package", ...input })
 }
 
 // ---- Accept / Mark Complete (v2) ----

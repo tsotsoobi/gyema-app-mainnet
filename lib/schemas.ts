@@ -116,6 +116,29 @@ export const isoDate = z
 /** A WhatsApp number a Pioneer supplies when accepting. Same rules as a phone. */
 export const whatsapp = ghanaPhone
 
+/** A city or town on the Pioneer rail. Free text, because "Other" is an option. */
+export const cityName = z.string().trim().min(1).max(80)
+
+/** What a Pioneer writes about a trip. Optional in the form, so no minimum. */
+export const listingNotes = z.string().trim().max(500)
+
+/** What a Pioneer is sending. Required: a package with no description is not one. */
+export const listingDescription = z.string().trim().min(1).max(500)
+
+/**
+ * A Pi amount a Pioneer names on their own listing.
+ *
+ * Bounded at both ends and required to be finite, because this arrives as
+ * parseFloat output from a text input: NaN and Infinity are both one keystroke
+ * away and neither is a price. The ceiling is not a policy about what a
+ * delivery may cost, it is a refusal to store a number nobody typed on purpose.
+ */
+export const piAmount = z
+  .number()
+  .finite()
+  .nonnegative()
+  .max(10_000, { message: "bad_amount" })
+
 // ---------------------------------------------------------------------------
 // Bodies
 // ---------------------------------------------------------------------------
@@ -132,6 +155,58 @@ export const ListingActionBody = z.object({
   accessToken,
   listingId,
 })
+
+/**
+ * Creating a listing. The client sends what it knows and nothing else.
+ *
+ * STRICT, and that is the security property rather than tidiness. Creation used
+ * to be a client-side INSERT through the authed client, so the browser composed
+ * the whole row: posted_by_id, posted_by_username, status, tracking_id,
+ * created_at and the matched_with_* columns were all whatever it sent. The
+ * database policy pinned posted_by_id to the session claim and nothing else,
+ * because the INSERT grant behind it was table-wide (finding S-15).
+ *
+ * Every one of those fields is now derived by the route. `.strict()` means an
+ * unknown key is REFUSED rather than dropped, which is what the hardening brief
+ * asks for: "any client value for them rejected, not ignored". Refusing beats
+ * ignoring twice over. A client that still sends posted_by_id learns it is
+ * wrong instead of silently appearing to work, and a column added to this table
+ * in future is closed to the client the day it is added rather than the day
+ * somebody remembers to close it.
+ *
+ * A discriminated union on `kind`, so a trip cannot carry a package's fields
+ * and the wrong combination is a 400 rather than a row with half its columns
+ * null.
+ */
+const listingCreateCommon = {
+  accessToken,
+  fromCity: cityName,
+  toCity: cityName,
+  whatsapp,
+}
+
+export const ListingCreateBody = z.discriminatedUnion("kind", [
+  z
+    .object({
+      ...listingCreateCommon,
+      kind: z.literal("trip"),
+      travelDate: isoDate,
+      capacity: packageSize,
+      pricePi: piAmount,
+      notes: optional(listingNotes),
+    })
+    .strict(),
+  z
+    .object({
+      ...listingCreateCommon,
+      kind: z.literal("package"),
+      deliverBy: isoDate,
+      size: packageSize,
+      description: listingDescription,
+      offerPi: piAmount,
+    })
+    .strict(),
+])
 
 export const ListingAcceptBody = z.object({
   accessToken,
@@ -219,6 +294,15 @@ export function reasonFor(error: z.ZodError): string {
   const issue = error.issues[0]
   if (!issue) return "bad_request"
 
+  // A field the server derives, sent by the client anyway. Named rather than
+  // folded into bad_request because the two mean opposite things to whoever
+  // reads the log: bad_request is a client that got a field wrong, this is a
+  // client reaching for a field it must never set. On ListingCreateBody that
+  // is the S-15 attack arriving, and it should be legible as itself.
+  if (error.issues.some((i) => i.code === "unrecognized_keys")) {
+    return "forbidden_field"
+  }
+
   const named = new Set([
     "invalid_tracking_id",
     "invalid_last4",
@@ -251,6 +335,12 @@ export function reasonFor(error: z.ZodError): string {
     case "senderPhone":
     case "recipientPhone":
     case "accepterWhatsapp":
+    // A poster's own contact number on a new listing. Named here for the same
+    // reason as the other three: ghanaPhone checks length before it checks
+    // shape, so a number that is merely too short fails the min() rather than
+    // the refine that carries the invalid_phone message, and would otherwise
+    // reach the caller as a generic bad_request.
+    case "whatsapp":
       return "invalid_phone"
     default:
       return "bad_request"
