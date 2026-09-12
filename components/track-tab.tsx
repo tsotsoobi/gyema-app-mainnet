@@ -8,7 +8,11 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { type Listing } from "@/lib/listings"
 import { getListingByTrackingIdAsync } from "@/lib/listings-async"
-import { getGuestJobByTrackingIdAsync, type GuestJobView } from "@/lib/guest-jobs"
+import {
+  getGuestJobByTrackingIdAsync,
+  GuestTrackUnavailableError,
+  type GuestJobView,
+} from "@/lib/guest-jobs"
 import { DeliveryTracker } from "./delivery-tracker"
 
 export function TrackTab() {
@@ -24,7 +28,11 @@ export function TrackTab() {
       setResult(found ?? "not-found")
     } catch (e) {
       console.error("[gyema] Tracking lookup failed:", e)
-      alert("Could not look up that tracking ID. Check your connection and try again.")
+      const message =
+        e instanceof GuestTrackUnavailableError && e.rateLimited
+          ? "Too many tracking lookups from your network just now. Please wait a minute and try again."
+          : "Could not look up that tracking ID. Check your connection and try again."
+      alert(message)
     } finally {
       setSearching(false)
     }

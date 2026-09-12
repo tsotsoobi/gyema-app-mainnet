@@ -33,6 +33,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { waitUntil } from "@vercel/functions"
 import { verifyPiAccessToken } from "@/lib/pi-platform"
 import { AuthVerifyBody } from "@/lib/schemas"
+import { checkLimit, ipIdentifier, retryAfterHeaders } from "@/lib/rate-limit"
 import {
   findOrCreatePioneerUser,
   generatePioneerSession,
@@ -52,6 +53,7 @@ type GateFailureReason =
   | "PROVISIONING_ERROR"
   | "SESSION_ERROR"
   | "MALFORMED_REQUEST"
+  | "RATE_LIMITED"
 
 type GateSuccess = {
   ok: true
@@ -87,6 +89,45 @@ export async function POST(req: NextRequest) {
   // Fire and forget via waitUntil — observability must not slow auth,
   // but the promise must survive function teardown on Vercel.
   waitUntil(logAuthEvent({ event_type: "request_received", elapsed_ms: 0 }))
+
+  // 0. Rate limit, before the Pi Platform round trip.
+  //
+  // Forty per five minutes per address. This is the most expensive
+  // unauthenticated route in the app: every call costs a Pi Platform request
+  // whether the token is real or not, and a valid one then costs a user
+  // lookup, a password derivation and a session mint. The check goes first so
+  // a flood is refused before any of that is spent.
+  //
+  // FAILS OPEN on a Redis error, and that is the deliberate opposite of the
+  // guest write path. This route is the only way anybody signs in. Closing it
+  // when a cache is unreachable would take the whole app down for every
+  // Pioneer to defend against a load problem, and the expensive half of the
+  // route is still gated by Pi Platform having to accept the token first.
+  //
+  // Keyed on the address alone. There is nothing else to key on: the caller
+  // has no identity here until Pi verifies the token, which is the work this
+  // is trying to protect.
+  //
+  // Console only, no auth_events row. Every other refusal on this route
+  // writes one, and this one deliberately does not: event_type is bounded by
+  // a CHECK constraint on the table, so a new value needs a migration applied
+  // by hand to both networks before the code that writes it can ship. Coupling
+  // a rate limit to a database change would mean neither could land alone, and
+  // the swallowed insert failure would look like nothing had happened. The
+  // Vercel log carries it until that migration is written.
+  const limit = await checkLimit("auth_verify", ipIdentifier(req))
+  if (!limit.ok) {
+    const elapsed = Date.now() - startedAt
+    console.warn("[auth/verify] Rejected: RATE_LIMITED", { ms: elapsed })
+    return NextResponse.json(
+      {
+        ok: false,
+        reason: "RATE_LIMITED",
+        message: "Too many sign-in attempts from this network. Please wait a moment and try again.",
+      },
+      { status: 429, headers: retryAfterHeaders(limit.retryAfterSeconds) }
+    )
+  }
 
   // 1. Parse the request body.
   let body: { accessToken?: unknown }

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase-admin"
 import { GuestLast4Body, parseJsonBody } from "@/lib/schemas"
 import { codeFromHash } from "@/lib/delivery-code"
 import { verifyLast4 } from "@/lib/last4-guard"
+import { checkLimit, ipIdentifier, retryAfterHeaders } from "@/lib/rate-limit"
 export const runtime = "nodejs"
 
 // Sender-side reveal of the one-time delivery code.
@@ -21,6 +22,20 @@ export const runtime = "nodejs"
 // POST rather than GET so the last 4 digits stay out of URLs and access logs,
 // same reasoning as /api/guest/mine.
 export async function POST(req: NextRequest) {
+  // The shared last-4 bucket: a hundred and twenty an hour per address across
+  // all three sender-side routes, because they are one handshake by one
+  // person. Fails OPEN on a Redis error, deliberately: the control on this
+  // route is the permanent ten-attempt ceiling in lib/last4-guard.ts, which
+  // lives in Postgres and does not decay, and refusing a sender at a door
+  // because a cache is unreachable would cost more than it protects.
+  const limit = await checkLimit("guest_last4", ipIdentifier(req))
+  if (!limit.ok) {
+    return NextResponse.json(
+      { ok: false, reason: "rate_limited" },
+      { status: 429, headers: retryAfterHeaders(limit.retryAfterSeconds) }
+    )
+  }
+
   const parsed = await parseJsonBody(req, GuestLast4Body)
   if (!parsed.ok) return parsed.response
   const { trackingId, last4 } = parsed.data

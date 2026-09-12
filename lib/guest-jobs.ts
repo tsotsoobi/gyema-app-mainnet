@@ -30,6 +30,26 @@ export type GuestJobView = {
   hasDeliveryCode?: boolean
 }
 
+/**
+ * Thrown when the tracker refuses a lookup for a reason that is not "no such
+ * job". It exists so a rate limit cannot be reported as a missing delivery.
+ *
+ * The tracker's whole vocabulary is found or not-found, and null means
+ * not-found to every caller. A 429 collapsed into null would tell a sender who
+ * is waiting on a courier that their delivery does not exist, which is both
+ * wrong and the most alarming thing this app could say to that person. Throwing
+ * puts it on the callers' existing error path instead, where it is a message
+ * about trying again.
+ */
+export class GuestTrackUnavailableError extends Error {
+  readonly rateLimited: boolean
+  constructor(rateLimited: boolean) {
+    super(rateLimited ? "guest track rate limited" : "guest track unavailable")
+    this.name = "GuestTrackUnavailableError"
+    this.rateLimited = rateLimited
+  }
+}
+
 export async function getGuestJobByTrackingIdAsync(
   trackingId: string
 ): Promise<GuestJobView | null> {
@@ -38,6 +58,10 @@ export async function getGuestJobByTrackingIdAsync(
   try {
     const res = await fetch(`/api/guest/track?trackingId=${encodeURIComponent(id)}`)
     if (res.status === 404) return null
+    // 429 is the one non-404 refusal a real person will meet, and it must not
+    // become null. Rethrown below rather than returned, so the caller's catch
+    // sees it.
+    if (res.status === 429) throw new GuestTrackUnavailableError(true)
     if (!res.ok) {
       console.error("[gyema] guest track fetch failed:", res.status)
       return null
@@ -45,6 +69,7 @@ export async function getGuestJobByTrackingIdAsync(
     const body = await res.json()
     return body?.found ? (body.job as GuestJobView) : null
   } catch (e) {
+    if (e instanceof GuestTrackUnavailableError) throw e
     console.error("[gyema] guest track fetch error:", e)
     return null
   }

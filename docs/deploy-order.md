@@ -9,6 +9,18 @@ per change. Every SQL statement is applied by hand through the Supabase
 dashboard with the project breadcrumb confirmed, per CLAUDE.md. Nothing here is
 applied by an agent, and Mainnet is read only to agents throughout.
 
+## Status: applied, both networks
+
+**All four migrations are applied and catalog verified on both networks.**
+Testnet on 7 September 2026, Mainnet on 8 September 2026, with a catalog check
+after each file rather than a reading of the Success banner, per invariant 8.
+The ceiling was additionally confirmed live on Testnet on 7 September by a
+sender card counting down to "9 tries left before it locks".
+
+What follows is kept as the record of the order and the reasoning, not as work
+outstanding. Anything below written in the future tense describes a step that
+has already run.
+
 ---
 
 ## The sequence, per network
@@ -47,8 +59,22 @@ Code first, because the code tolerates the old database state and the new one:
   `getCounterpartContactAsync` returns null if the function does not exist yet,
   so the contact button simply does not render;
 - the status routes use the service_role key, which is unaffected by grants;
-- the last-4 ceiling reads `last4_attempts` off the row, and until the column
-  exists that read is undefined, which the guard treats as zero.
+- the last-4 ceiling reads `last4_attempts` off the row.
+
+  **This bullet was wrong and is corrected rather than deleted, because it was
+  relied on.** It claimed that until the column existed the read was undefined
+  and the guard treated it as zero, so the code tolerated the old database
+  state. That would hold for a `select("*")`. All three sender-side routes name
+  `last4_attempts` in an explicit column list, and PostgREST answers an unknown
+  column with 42703 rather than with a null, so the select fails and the route
+  returns `lookup_failed`. Deploying that code ahead of this migration would
+  have taken revealing a delivery code, confirming pickup and confirming
+  delivery out of service, rather than degrading them.
+
+  It did not happen: the migration was applied on 7 September and the code
+  reached production behind it. The ordering constraint was real in the
+  opposite direction from the one written here, and it is recorded so a future
+  reader does not lean on the same false tolerance.
 
 The reverse order is what breaks. Apply the grant baseline first and every
 listing read in the deployed app is a `select("*")` against a column level
@@ -142,9 +168,14 @@ policy pinning `posted_by_id`, which is S-15 closed.
 three: one column and one RPC. Its section 3 has the verification, including the
 statement for releasing a genuine sender who has locked themselves out.
 
-Until this is applied, the deployed code reads `last4_attempts` as undefined and
-treats it as zero, so the guard behaves as it did before: correct, and without a
-ceiling. Applying it turns the ceiling on.
+Applied 7 September on Testnet, 8 September on Mainnet.
+
+An earlier version of this section said the deployed code tolerated the column
+being absent, reading it as undefined and treating it as zero. It does not.
+The three sender-side routes name `last4_attempts` in an explicit select list,
+so an absent column is a 42703 and the route answers `lookup_failed`. This file
+is a hard prerequisite for that code, not an enhancement to it. See the
+corrected bullet in step 1.
 
 ### 9. Reader migration
 
