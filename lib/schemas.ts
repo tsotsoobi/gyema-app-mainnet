@@ -102,7 +102,30 @@ export const contentsNote = z.string().trim().min(1).max(500)
 /** A person's name, as the sender writes it. */
 export const personName = z.string().trim().min(1).max(80)
 
-export const packageSize = z.enum(["small", "medium", "large"])
+/**
+ * Parcel size, and there are TWO of these because the two rails genuinely
+ * differ. One shared enum is what caused the outage on 13 September.
+ *
+ * The Pioneer forms offer four sizes and the guest form offers three. When
+ * listing creation moved behind a schema, both rails were pointed at the
+ * three-value enum written for the guest rail, so a Pioneer choosing
+ * "Envelope / documents" got a 400 with no server log line and an alert
+ * saying to check their connection. Creation had been an unvalidated client
+ * INSERT before that, so the value had always gone straight to the column.
+ *
+ * Naming them apart is the fix for the cause rather than the symptom. A
+ * divergence between the two rails is now a type error at the call site
+ * instead of a refusal at runtime, and there is no longer a single `packageSize`
+ * to reach for by habit. tests/schemas.test.ts asserts each enum against the
+ * options its own form actually renders, so a fifth option cannot drift out of
+ * range unnoticed either.
+ */
+
+/** The Pioneer rail: trips and packages. Mirrors PackageSize in lib/listings.ts. */
+export const pioneerPackageSize = z.enum(["envelope", "small", "medium", "large"])
+
+/** The guest rail. Three sizes, and the send form offers exactly these. */
+export const guestPackageSize = z.enum(["small", "medium", "large"])
 export const paymentType = z.enum(["cash", "momo"])
 export const whenPref = z.string().trim().min(1).max(40)
 
@@ -208,7 +231,7 @@ export const ListingCreateBody = z.discriminatedUnion("kind", [
       ...listingCreateCommon,
       kind: z.literal("trip"),
       travelDate: isoDate,
-      capacity: packageSize,
+      capacity: pioneerPackageSize,
       pricePi: piAmount,
       notes: optional(listingNotes),
     })
@@ -218,7 +241,7 @@ export const ListingCreateBody = z.discriminatedUnion("kind", [
       ...listingCreateCommon,
       kind: z.literal("package"),
       deliverBy: isoDate,
-      size: packageSize,
+      size: pioneerPackageSize,
       description: listingDescription,
       offerPi: piAmount,
     })
@@ -251,7 +274,7 @@ export const GuestCreateBody = z.object({
   dropoffArea: areaName,
   pickupLandmark: optional(landmark),
   dropoffLandmark: optional(landmark),
-  packageSize: packageSize,
+  packageSize: guestPackageSize,
   contentsNote: optional(contentsNote),
   recipientName: optional(personName),
   recipientPhone: optional(ghanaPhone),
@@ -346,7 +369,13 @@ export function reasonFor(error: z.ZodError): string {
       return "invalid_via"
     case "txid":
       return "bad_txid"
+    // All three name the same thing on different rails: packageSize on the
+    // guest form, capacity on a Pioneer trip, size on a Pioneer package. The
+    // last two were missing, so an out-of-range size on the Pioneer rail came
+    // back as a generic bad_request and named nothing.
     case "packageSize":
+    case "capacity":
+    case "size":
       return "bad_size"
     case "paymentType":
       return "bad_payment"
@@ -365,9 +394,20 @@ export function reasonFor(error: z.ZodError): string {
   }
 }
 
+/**
+ * A failure carries its reason as well as its response.
+ *
+ * The response is what the caller returns; the reason is what the caller
+ * LOGS. Without it a 400 is invisible server-side, because parseJsonBody
+ * composes the whole refusal and the route never sees why. That is how the
+ * 13 September Pioneer outage stayed silent in the Vercel logs while every
+ * post failed.
+ *
+ * Additive: callers that ignore the field behave exactly as before.
+ */
 export type ParseResult<T> =
   | { ok: true; data: T }
-  | { ok: false; response: NextResponse }
+  | { ok: false; reason: string; response: NextResponse }
 
 /**
  * Read and validate a JSON body.
@@ -387,18 +427,18 @@ export async function parseJsonBody<T extends z.ZodTypeAny>(
   } catch {
     return {
       ok: false,
+      reason: "invalid_body",
       response: NextResponse.json({ ok: false, reason: "invalid_body" }, { status: 400 }),
     }
   }
 
   const result = schema.safeParse(raw)
   if (!result.success) {
+    const reason = reasonFor(result.error)
     return {
       ok: false,
-      response: NextResponse.json(
-        { ok: false, reason: reasonFor(result.error) },
-        { status: 400 }
-      ),
+      reason,
+      response: NextResponse.json({ ok: false, reason }, { status: 400 }),
     }
   }
 
@@ -412,12 +452,11 @@ export function parseQuery<T extends z.ZodTypeAny>(
 ): ParseResult<z.infer<T>> {
   const result = schema.safeParse(value ?? undefined)
   if (!result.success) {
+    const reason = reasonFor(result.error)
     return {
       ok: false,
-      response: NextResponse.json(
-        { error: "Invalid request", reason: reasonFor(result.error) },
-        { status: 400 }
-      ),
+      reason,
+      response: NextResponse.json({ error: "Invalid request", reason }, { status: 400 }),
     }
   }
   return { ok: true, data: result.data }
