@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
-import { resolveCaller } from "@/lib/route-auth"
+import { callerRefusalResponse, resolveCaller } from "@/lib/route-auth"
 import { GuestAcceptBody, parseJsonBody } from "@/lib/schemas"
 import { mintDeliveryCode, hashDeliveryCode } from "@/lib/delivery-code"
 
@@ -47,10 +47,12 @@ export async function POST(request: NextRequest) {
     if (!parsed.ok) return parsed.response
     const { accessToken, trackingId, accepterWhatsapp } = parsed.data
     const admin = createAdminClient()
-    const caller = await resolveCaller(admin, accessToken)
-    if (!caller) {
-      return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 })
-    }
+    // resolveCaller now says WHY it refused. A 401 means the caller is not who
+    // they need to be; a 503 means we could not ask Supabase Auth, which is a
+    // different thing and used to be reported as the first one.
+    const verdict = await resolveCaller(admin, accessToken)
+    if (!verdict.ok) return callerRefusalResponse(verdict)
+    const caller = verdict.caller
     const deliveryCode = mintDeliveryCode()
     const { data, error } = await admin
       .from("guest_jobs")

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { randomBytes } from "crypto"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { ListingCreateBody, parseJsonBody } from "@/lib/schemas"
-import { resolveCaller } from "@/lib/route-auth"
+import { callerRefusalResponse, resolveCaller } from "@/lib/route-auth"
 
 // Create a listing. The server composes the row; the client sends its contents.
 //
@@ -183,14 +183,18 @@ export async function POST(request: NextRequest) {
     // Identity from the verified session, never from the body. resolveCaller
     // reads app_metadata, which only the service-role key can write, so both
     // the uid and the username are values the caller could not choose.
-    const caller = await resolveCaller(admin, body.accessToken)
-    if (!caller) {
-      // Three different things land here and the log cannot tell them apart
-      // without saying more than it should: no token, a token getUser
-      // rejects, or app_metadata missing a claim. The distinction is a
-      // question for auth.users, not for this line.
-      return refuse("unauthorized", 401)
+    // resolveCaller now says WHY it refused, and names it in its own log. The
+    // comment that used to sit here said the distinction was a question for
+    // auth.users rather than for this line. That was wrong, and it cost a
+    // morning on 13 September: a transient Supabase Auth failure and a genuinely
+    // bad token were the same null, and the Pioneer was told they were not
+    // signed in when their session was fine.
+    const verdict = await resolveCaller(admin, body.accessToken)
+    if (!verdict.ok) {
+      console.warn(`[gyema] listings create refused: ${verdict.reason} (${verdict.status})`)
+      return callerRefusalResponse(verdict)
     }
+    const caller = verdict.caller
 
     const trackingId = await generateUniqueTrackingId(admin)
     if (!trackingId) {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
-import { resolveCaller } from "@/lib/route-auth"
+import { callerRefusalResponse, resolveCaller } from "@/lib/route-auth"
 import { GuestMineBody, parseJsonBody } from "@/lib/schemas"
 
 // The courier's own accepted guest jobs. Before this route the accept sheet
@@ -95,10 +95,12 @@ export async function POST(request: NextRequest) {
     // their jobs on the next sign-in, which is exactly the case this surface
     // exists to survive. Both values come from app_metadata, so neither is
     // something the caller could have chosen.
-    const caller = await resolveCaller(admin, accessToken)
-    if (!caller) {
-      return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 })
-    }
+    // resolveCaller now says WHY it refused. A 401 means the caller is not who
+    // they need to be; a 503 means we could not ask Supabase Auth, which is a
+    // different thing and used to be reported as the first one.
+    const verdict = await resolveCaller(admin, accessToken)
+    if (!verdict.ok) return callerRefusalResponse(verdict)
+    const caller = verdict.caller
 
     // Assignment is the ONLY filter. No status filter, so a job stays
     // findable through its whole life: accepted, in transit, delivered.

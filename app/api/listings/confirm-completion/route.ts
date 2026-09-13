@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { ListingActionBody, parseJsonBody } from "@/lib/schemas"
-import { resolveCaller } from "@/lib/route-auth"
+import { callerRefusalResponse, resolveCaller } from "@/lib/route-auth"
 
 // Server-side completion confirmation. One party stamps their own side of a
 // delivery; the delivery closes when both stamps are in.
@@ -55,13 +55,12 @@ export async function POST(request: NextRequest) {
     // on. Same derivation as the accept and release routes; pi_uid lives in
     // app_metadata, written there by /api/auth/verify with the service_role
     // key. Never user_metadata, which the user can write themselves.
-    const caller = await resolveCaller(admin, accessToken)
-    if (!caller) {
-      return NextResponse.json(
-        { ok: false, reason: "unauthorized" },
-        { status: 401 },
-      )
-    }
+    // resolveCaller now says WHY it refused. A 401 means the caller is not who
+    // they need to be; a 503 means we could not ask Supabase Auth, which is a
+    // different thing and used to be reported as the first one.
+    const verdict = await resolveCaller(admin, accessToken)
+    if (!verdict.ok) return callerRefusalResponse(verdict)
+    const caller = verdict.caller
 
     // The stamp. Returns the listing row when this party's attestation is on
     // the record — whether this call put it there or an earlier one did — and

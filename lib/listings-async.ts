@@ -347,13 +347,37 @@ type CreatedListingResponse = {
  * schema is strict, so sending them is a 400 rather than a value that is
  * quietly ignored.
  */
+/**
+ * Why a create failed, in the terms the person reading the screen needs.
+ *
+ * A bare null told every caller the same thing and they all said "check your
+ * connection", which is wrong for every refusal the server issues. On
+ * 13 September a Pioneer was shown that sentence for a 401, then for a 400,
+ * and neither had anything to do with their connection.
+ *
+ *   offline           the request never reached us, so the old sentence is
+ *                     right and is kept for exactly this case
+ *   signed_out        the session is genuinely gone. Sign in again
+ *   auth_unavailable  the session is probably fine and Supabase Auth could
+ *                     not be reached. Try again shortly
+ *   rejected          the server refused the contents of the form
+ */
+export type CreateFailure = "offline" | "signed_out" | "auth_unavailable" | "rejected"
+
+export type CreateResult =
+  | { ok: true; listing: Listing }
+  | { ok: false; failure: CreateFailure }
+
 async function createListingAsync(
   payload: Record<string, unknown>
-): Promise<Listing | null> {
+): Promise<CreateResult> {
   const session = getSupabaseSession()
   if (!session?.accessToken) {
+    // No token at all. The app renders as signed in from localStorage while
+    // the Supabase session lives in memory only, so this state is reachable
+    // and is genuinely "sign in again" rather than a network problem.
     console.error("createListingAsync: no active session")
-    return null
+    return { ok: false, failure: "signed_out" }
   }
   try {
     const res = await fetch("/api/listings/create", {
@@ -361,15 +385,40 @@ async function createListingAsync(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ accessToken: session.accessToken, ...payload }),
     })
-    const body = (await res.json()) as CreatedListingResponse
-    if (!res.ok || !body.ok || !body.listing) {
-      console.error("createListingAsync failed:", res.status, body.reason)
-      return null
+    const body = (await res.json().catch(() => null)) as CreatedListingResponse | null
+
+    if (!res.ok || !body?.ok || !body.listing) {
+      console.error("createListingAsync failed:", res.status, body?.reason)
+      if (res.status === 503 || body?.reason === "auth_unavailable") {
+        return { ok: false, failure: "auth_unavailable" }
+      }
+      if (res.status === 401) return { ok: false, failure: "signed_out" }
+      return { ok: false, failure: "rejected" }
     }
-    return fromRow(body.listing)
+    return { ok: true, listing: fromRow(body.listing) }
   } catch (err) {
+    // fetch itself threw, which is the only case that really is the network.
     console.error("createListingAsync error:", err)
-    return null
+    return { ok: false, failure: "offline" }
+  }
+}
+
+/**
+ * What to put in front of the person, per failure.
+ *
+ * Shared by both Pioneer forms so they cannot drift, and worded so each one
+ * names an action the reader can take.
+ */
+export function createFailureMessage(failure: CreateFailure, noun: string): string {
+  switch (failure) {
+    case "offline":
+      return `Could not reach Gyema. Check your connection and try again.`
+    case "signed_out":
+      return `Your session has expired. Sign in with Pi again, then post your ${noun}.`
+    case "auth_unavailable":
+      return `Could not confirm your sign-in just now. Nothing was posted. Please try again in a moment.`
+    case "rejected":
+      return `Could not post your ${noun}. Please check the form and try again.`
   }
 }
 
@@ -381,7 +430,7 @@ export async function createTripAsync(input: {
   capacity: PackageSize
   pricePi: number
   notes: string
-}): Promise<Listing | null> {
+}): Promise<CreateResult> {
   return createListingAsync({ kind: "trip", ...input })
 }
 
@@ -393,7 +442,7 @@ export async function createPackageAsync(input: {
   size: PackageSize
   description: string
   offerPi: number
-}): Promise<Listing | null> {
+}): Promise<CreateResult> {
   return createListingAsync({ kind: "package", ...input })
 }
 

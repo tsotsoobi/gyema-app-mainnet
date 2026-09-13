@@ -19,6 +19,7 @@ import {
   type PackageSize,
 } from "@/lib/listings"
 import {
+  createFailureMessage,
   createPackageAsync,
   createTripAsync,
   getOpenListingsAsync,
@@ -131,7 +132,7 @@ function TravellerHome({
     if (!valid || submitting) return
     setSubmitting(true)
     try {
-      const listing = await createTripAsync({
+      const result = await createTripAsync({
         fromCity: (fromCity === "Other" ? fromOther.trim() : fromCity.trim()),
         toCity: (toCity === "Other" ? toOther.trim() : toCity.trim()),
         travelDate,
@@ -142,11 +143,13 @@ function TravellerHome({
         // session token, and its schema is strict, so sending them is a 400.
         whatsapp: whatsapp.trim(),
       })
-      if (!listing) {
-        alert("Could not register your trip. Check your connection and try again.")
+      if (!result.ok) {
+        // Each failure names a different action. "Check your connection" is
+        // only right when the request never left the browser.
+        alert(createFailureMessage(result.failure, "trip"))
         return
       }
-      setSubmitted(listing.trackingId)
+      setSubmitted(result.listing.trackingId)
       setFromCity("")
       setToCity("")
       setFromOther("")
@@ -160,7 +163,7 @@ function TravellerHome({
       onCreated()
     } catch (e) {
       console.error("[gyema] Could not register trip:", e)
-      alert("Could not register your trip. Check your connection and try again.")
+      alert(createFailureMessage("offline", "trip"))
     } finally {
       setSubmitting(false)
     }
@@ -495,7 +498,7 @@ function SenderHome({
     if (!valid || submitting) return
     setSubmitting(true)
     try {
-      const listing = await createPackageAsync({
+      const result = await createPackageAsync({
         description: description.trim(),
         size: size as PackageSize,
         fromCity: (fromCity === "Other" ? fromOther.trim() : fromCity.trim()),
@@ -505,11 +508,11 @@ function SenderHome({
         // No postedById or postedByUsername. See the trip form above.
         whatsapp: whatsapp.trim(),
       })
-      if (!listing) {
-        alert("Could not post your delivery. Check your connection and try again.")
+      if (!result.ok) {
+        alert(createFailureMessage(result.failure, "delivery"))
         return
       }
-      setSubmitted(listing.trackingId)
+      setSubmitted(result.listing.trackingId)
       setDescription("")
       setSize("")
       setFromCity("")
@@ -523,7 +526,7 @@ function SenderHome({
       onCreated()
     } catch (e) {
       console.error("[gyema] Could not post delivery:", e)
-      alert("Could not post your delivery. Check your connection and try again.")
+      alert(createFailureMessage("offline", "delivery"))
     } finally {
       setSubmitting(false)
     }
