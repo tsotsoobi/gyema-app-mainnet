@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import {
+  ListingCreateBody,
+  guestPackageSize,
+  pioneerPackageSize,
   GuestCreateBody,
   GuestConfirmDeliveryBody,
   GuestLast4Body,
@@ -173,6 +176,108 @@ describe("the discriminator on confirm-delivery", () => {
 
   it("has no default via, so an absent one is malformed rather than a sender", () => {
     expect(GuestConfirmDeliveryBody.safeParse({ trackingId: "GYM-A1B2C3", last4: "1234" }).success).toBe(false)
+  })
+})
+
+describe("each rail's size enum matches the form that feeds it", () => {
+  // THE 13 SEPTEMBER OUTAGE, as a test.
+  //
+  // The Pioneer forms offer four sizes and the guest form offers three. When
+  // listing creation moved behind a schema, both rails were pointed at the
+  // three-value enum written for the guest rail, so a Pioneer choosing
+  // "Envelope / documents" got a 400 with no server log line and an alert
+  // telling them to check their connection.
+  //
+  // These read the options out of the forms rather than restating them, so a
+  // fifth option added to a dropdown fails here instead of at runtime. A test
+  // that hardcoded the list would have passed on the day this broke.
+
+  /**
+   * The SelectItem values inside one Select, found by the state variable it is
+   * bound to. Scoped to a single Select because these files contain several,
+   * and a file-wide sweep would collect city names and payment types too.
+   */
+  function optionsFor(file: string, boundTo: string): string[] {
+    const source = readFileSync(file, "utf8")
+    const open = source.indexOf(`<Select value={${boundTo}}`)
+    expect(open, `no Select bound to ${boundTo} in ${file}`).toBeGreaterThan(-1)
+    const close = source.indexOf("</Select>", open)
+    expect(close, `unterminated Select for ${boundTo}`).toBeGreaterThan(open)
+    const values = [...source.slice(open, close).matchAll(/<SelectItem value="([^"]+)"/g)].map(
+      (m) => m[1]
+    )
+    expect(values.length, `no options found for ${boundTo}`).toBeGreaterThan(0)
+    return values
+  }
+
+  it("accepts every capacity the Register a Trip form offers", () => {
+    for (const value of optionsFor("components/home-tab.tsx", "capacity")) {
+      expect(pioneerPackageSize.safeParse(value).success, value).toBe(true)
+    }
+  })
+
+  it("accepts every size the Post a Delivery form offers", () => {
+    for (const value of optionsFor("components/home-tab.tsx", "size")) {
+      expect(pioneerPackageSize.safeParse(value).success, value).toBe(true)
+    }
+  })
+
+  it("accepts every size the guest send form offers", () => {
+    for (const value of optionsFor("app/send/page.tsx", "packageSize")) {
+      expect(guestPackageSize.safeParse(value).success, value).toBe(true)
+    }
+  })
+
+  it("keeps the two rails apart, which is the point of two enums", () => {
+    // envelope is the divergence. If these ever agree, one of them was widened
+    // to silence a failure rather than because a form changed.
+    expect(pioneerPackageSize.safeParse("envelope").success).toBe(true)
+    expect(guestPackageSize.safeParse("envelope").success).toBe(false)
+  })
+
+  it("still refuses a size no form offers", () => {
+    for (const enumeration of [pioneerPackageSize, guestPackageSize]) {
+      expect(enumeration.safeParse("enormous").success).toBe(false)
+      expect(enumeration.safeParse("").success).toBe(false)
+    }
+  })
+
+  it("takes an envelope trip end to end through the body schema", () => {
+    // The exact shape components/home-tab.tsx sends, with the value that failed.
+    const parsed = ListingCreateBody.safeParse({
+      accessToken: "token",
+      kind: "trip",
+      fromCity: "Accra",
+      toCity: "Kumasi",
+      travelDate: "2026-10-01",
+      capacity: "envelope",
+      pricePi: 5,
+      notes: "",
+      whatsapp: "0244123456",
+    })
+    expect(parsed.success).toBe(true)
+  })
+
+  it("names the field when a size is out of range, rather than bad_request", () => {
+    // capacity and size were missing from reasonFor, so the Pioneer rail's
+    // refusal came back generic and pointed at nothing.
+    const base = {
+      accessToken: "token",
+      fromCity: "Accra",
+      toCity: "Kumasi",
+      whatsapp: "0244123456",
+    }
+    expect(
+      reason(ListingCreateBody, {
+        ...base, kind: "trip", travelDate: "2026-10-01", capacity: "enormous", pricePi: 5,
+      })
+    ).toBe("bad_size")
+    expect(
+      reason(ListingCreateBody, {
+        ...base, kind: "package", deliverBy: "2026-10-01", size: "enormous",
+        description: "Documents", offerPi: 5,
+      })
+    ).toBe("bad_size")
   })
 })
 

@@ -224,6 +224,106 @@ describe("the five things a Pioneer could set before this route existed", () => 
   })
 })
 
+describe("every refusal says why, server-side", () => {
+  // On 13 September a Pioneer could not post a trip and the Vercel logs were
+  // empty, because four of this route's refusals returned without logging: the
+  // schema 400, the 401, id_generation_failed, and anything parseJsonBody
+  // composed itself. An empty log read as "the request never arrived" when it
+  // meant "refused, silently", and that cost a day of looking in the wrong
+  // place.
+  //
+  // These assert the log line rather than the response, because the response
+  // was never the part that was missing.
+
+  function captureWarnings() {
+    const lines: string[] = []
+    const spy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+      lines.push(args.map(String).join(" "))
+    })
+    return { lines, restore: () => spy.mockRestore() }
+  }
+
+  it("logs a schema refusal, which is the one that was silent", async () => {
+    const { lines, restore } = captureWarnings()
+    try {
+      // capacity out of range: the exact shape of the 13 September failure.
+      const res = await create.POST(
+        postJson("http://localhost/x", {
+          ...GOOD_TRIP, whatsapp: "0244123456", capacity: "enormous",
+        }) as never
+      )
+      expect(res.status).toBe(400)
+      expect(await res.json()).toMatchObject({ reason: "bad_size" })
+    } finally {
+      restore()
+    }
+    expect(lines.join(" ")).toContain("bad_size")
+  })
+
+  it("logs an unauthorized refusal", async () => {
+    mock.asAnonymousFailure()
+    const { lines, restore } = captureWarnings()
+    try {
+      const res = await create.POST(
+        postJson("http://localhost/x", { ...GOOD_TRIP, whatsapp: "0244123456" }) as never
+      )
+      expect(res.status).toBe(401)
+    } finally {
+      restore()
+    }
+    expect(lines.join(" ")).toContain("unauthorized")
+  })
+
+  it("logs an exhausted tracking id search, with how many attempts", async () => {
+    for (let i = 0; i < 8; i++) {
+      mock.queue({ data: { tracking_id: "GYM-TAKEN1" }, error: null }, { data: null, error: null })
+    }
+    const { lines, restore } = captureWarnings()
+    try {
+      const res = await create.POST(
+        postJson("http://localhost/x", { ...GOOD_TRIP, whatsapp: "0244123456" }) as never
+      )
+      expect(res.status).toBe(500)
+    } finally {
+      restore()
+    }
+    expect(lines.join(" ")).toContain("id_generation_failed")
+  })
+
+  it("logs an insert failure with the database's own message", async () => {
+    mock.queue(
+      { data: null, error: null },
+      { data: null, error: null },
+      { data: null, error: { message: "permission denied for table listings" } }
+    )
+    const { lines, restore } = captureWarnings()
+    try {
+      const res = await create.POST(
+        postJson("http://localhost/x", { ...GOOD_TRIP, whatsapp: "0244123456" }) as never
+      )
+      expect(res.status).toBe(500)
+    } finally {
+      restore()
+    }
+    const joined = lines.join(" ")
+    expect(joined).toContain("insert_failed")
+    // The Postgres message is the part that names a grant problem.
+    expect(joined).toContain("permission denied")
+  })
+
+  it("accepts an envelope, which is what broke", async () => {
+    queueSuccess()
+    const res = await create.POST(
+      postJson("http://localhost/x", {
+        ...GOOD_TRIP, whatsapp: "0244123456", capacity: "envelope",
+      }) as never
+    )
+    expect(res.status).toBe(200)
+    const row = insertedRow()
+    expect(row?.capacity).toBe("envelope")
+  })
+})
+
 describe("the tracking id the server mints", () => {
   it("checks both rails before using one", async () => {
     queueSuccess()

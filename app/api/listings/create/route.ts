@@ -142,13 +142,40 @@ async function generateUniqueTrackingId(
   return null
 }
 
+/**
+ * Every refusal, logged, in one place.
+ *
+ * On 13 September a Pioneer could not post a trip and the Vercel logs were
+ * empty. The route had four refusals that returned without saying anything:
+ * the schema 400, the 401, id_generation_failed, and anything parseJsonBody
+ * composed on its own. Only the insert error and the success line ever
+ * reached a log, so an empty log looked like "the request never arrived" when
+ * it actually meant "refused, silently".
+ *
+ * The reason string is not secret. It is the same value already in the
+ * response body, so logging it tells an operator nothing a caller does not
+ * already know.
+ */
+function refuse(reason: string, status: number, detail?: string) {
+  console.warn(
+    `[gyema] listings create refused: ${reason} (${status})${detail ? ` :: ${detail}` : ""}`
+  )
+  return NextResponse.json({ ok: false, reason }, { status })
+}
+
 export async function POST(request: NextRequest) {
   try {
     // ListingCreateBody is strict, so a body carrying posted_by_id, status,
     // tracking_id, created_at or any matched_with_* field is refused here with
     // reason "forbidden_field" rather than having those fields quietly dropped.
     const parsed = await parseJsonBody(request, ListingCreateBody)
-    if (!parsed.ok) return parsed.response
+    if (!parsed.ok) {
+      // The response is already composed; this only records why. Returning
+      // parsed.response rather than rebuilding it keeps the contract the
+      // schema owns in one place.
+      console.warn(`[gyema] listings create refused: ${parsed.reason} (400)`)
+      return parsed.response
+    }
     const body = parsed.data
 
     const admin = createAdminClient()
@@ -158,15 +185,16 @@ export async function POST(request: NextRequest) {
     // the uid and the username are values the caller could not choose.
     const caller = await resolveCaller(admin, body.accessToken)
     if (!caller) {
-      return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 })
+      // Three different things land here and the log cannot tell them apart
+      // without saying more than it should: no token, a token getUser
+      // rejects, or app_metadata missing a claim. The distinction is a
+      // question for auth.users, not for this line.
+      return refuse("unauthorized", 401)
     }
 
     const trackingId = await generateUniqueTrackingId(admin)
     if (!trackingId) {
-      return NextResponse.json(
-        { ok: false, reason: "id_generation_failed" },
-        { status: 500 }
-      )
+      return refuse("id_generation_failed", 500, `${MAX_ID_ATTEMPTS} attempts all collided`)
     }
 
     // Everything the server owns, in one place. matched_with_user_id,
@@ -225,8 +253,7 @@ export async function POST(request: NextRequest) {
       // attempts above cannot see: two requests minting the same ID between
       // one another's check and insert. Rare enough to answer honestly rather
       // than retry, and the caller simply posts again.
-      console.error("[gyema] listings create insert error:", error.message)
-      return NextResponse.json({ ok: false, reason: "insert_failed" }, { status: 500 })
+      return refuse("insert_failed", 500, error.message)
     }
 
     console.log("[gyema] listing created", {
@@ -237,7 +264,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, listing: data })
   } catch (err) {
-    console.error("[gyema] listings create route error:", err)
-    return NextResponse.json({ ok: false, reason: "server_error" }, { status: 500 })
+    const detail = err instanceof Error ? err.message : String(err)
+    return refuse("server_error", 500, detail)
   }
 }
