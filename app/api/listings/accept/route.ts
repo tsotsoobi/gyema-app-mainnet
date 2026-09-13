@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
-import { resolveCaller } from "@/lib/route-auth"
+import { callerRefusalResponse, resolveCaller } from "@/lib/route-auth"
 import { ListingAcceptBody, parseJsonBody } from "@/lib/schemas"
 
 // Server-side listing claim. Runs with the service_role client so it bypasses
@@ -30,13 +30,12 @@ export async function POST(request: NextRequest) {
     // Verify the accepter from their Supabase session token. resolveCaller
     // reads app_metadata, which only the service_role key can write, never
     // user_metadata, which the user writes themselves.
-    const caller = await resolveCaller(admin, accessToken)
-    if (!caller) {
-      return NextResponse.json(
-        { ok: false, reason: "unauthorized" },
-        { status: 401 },
-      )
-    }
+    // resolveCaller now says WHY it refused. A 401 means the caller is not who
+    // they need to be; a 503 means we could not ask Supabase Auth, which is a
+    // different thing and used to be reported as the first one.
+    const verdict = await resolveCaller(admin, accessToken)
+    if (!verdict.ok) return callerRefusalResponse(verdict)
+    const caller = verdict.caller
 
     // Atomic claim. Guards:
     //   .eq("status", "open")        only an open listing can be claimed

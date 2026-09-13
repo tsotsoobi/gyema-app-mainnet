@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { ListingActionBody, parseJsonBody } from "@/lib/schemas"
-import { resolveCaller } from "@/lib/route-auth"
+import { callerRefusalResponse, resolveCaller } from "@/lib/route-auth"
 
 // Release a claim the caller made, reverting the listing to 'open'. Called
 // when the connection-fee payment is cancelled or fails after a successful
@@ -20,13 +20,12 @@ export async function POST(request: NextRequest) {
 
     const admin = createAdminClient()
 
-    const caller = await resolveCaller(admin, accessToken)
-    if (!caller) {
-      return NextResponse.json(
-        { ok: false, reason: "unauthorized" },
-        { status: 401 },
-      )
-    }
+    // resolveCaller now says WHY it refused. A 401 means the caller is not who
+    // they need to be; a 503 means we could not ask Supabase Auth, which is a
+    // different thing and used to be reported as the first one.
+    const verdict = await resolveCaller(admin, accessToken)
+    if (!verdict.ok) return callerRefusalResponse(verdict)
+    const caller = verdict.caller
 
     // Revert only the caller's own claim, and only while still 'matched'
     // (before any completion confirmation). Clears the match fields.

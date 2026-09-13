@@ -260,7 +260,7 @@ describe("every refusal says why, server-side", () => {
     expect(lines.join(" ")).toContain("bad_size")
   })
 
-  it("logs an unauthorized refusal", async () => {
+  it("logs a rejected token with its name, status and code", async () => {
     mock.asAnonymousFailure()
     const { lines, restore } = captureWarnings()
     try {
@@ -268,10 +268,51 @@ describe("every refusal says why, server-side", () => {
         postJson("http://localhost/x", { ...GOOD_TRIP, whatsapp: "0244123456" }) as never
       )
       expect(res.status).toBe(401)
+      expect(await res.json()).toMatchObject({ reason: "unauthorized" })
     } finally {
       restore()
     }
-    expect(lines.join(" ")).toContain("unauthorized")
+    const joined = lines.join(" ")
+    // The three fields that separate a bad token from an unreachable auth
+    // service. All three were missing on 13 September.
+    expect(joined).toContain("AuthApiError")
+    expect(joined).toContain("status=401")
+    expect(joined).toContain("code=bad_jwt")
+    expect(joined).toContain("classified=bad_token")
+  })
+
+  it("answers 503 and says transient when auth cannot be reached", async () => {
+    // The 13 September incident. The token is fine; we could not ask.
+    mock.asAuthUnavailable()
+    const { lines, restore } = captureWarnings()
+    try {
+      const res = await create.POST(
+        postJson("http://localhost/x", { ...GOOD_TRIP, whatsapp: "0244123456" }) as never
+      )
+      expect(res.status).toBe(503)
+      expect(await res.json()).toMatchObject({ reason: "auth_unavailable" })
+    } finally {
+      restore()
+    }
+    const joined = lines.join(" ")
+    expect(joined).toContain("AuthRetryableFetchError")
+    expect(joined).toContain("classified=transient")
+    // And nothing was written on the way to refusing.
+    expect(mock.calls.find((c) => c.method === "insert")).toBeUndefined()
+  })
+
+  it("treats an auth rate limit as transient rather than as a bad session", async () => {
+    mock.asAuthRateLimited()
+    const { lines, restore } = captureWarnings()
+    try {
+      const res = await create.POST(
+        postJson("http://localhost/x", { ...GOOD_TRIP, whatsapp: "0244123456" }) as never
+      )
+      expect(res.status).toBe(503)
+    } finally {
+      restore()
+    }
+    expect(lines.join(" ")).toContain("status=429")
   })
 
   it("logs an exhausted tracking id search, with how many attempts", async () => {

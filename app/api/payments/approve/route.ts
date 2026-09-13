@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
-import { resolveCaller } from "@/lib/route-auth"
+import { callerRefusalResponse, resolveCaller } from "@/lib/route-auth"
 import { PaymentApproveBody, parseJsonBody } from "@/lib/schemas"
 import {
   authorizePayment,
@@ -51,10 +51,14 @@ export async function POST(request: NextRequest) {
     }
 
     const admin = createAdminClient()
-    const caller = await resolveCaller(admin, accessToken)
-    if (!caller) {
-      return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 })
-    }
+    // resolveCaller now says WHY it refused. A 401 means the caller is not who
+    // they need to be; a 503 means we could not ask Supabase Auth, which is a
+    // different thing and used to be reported as the first one.
+    // callerVerdict, not verdict: this route already has a `verdict` for the
+    // payment policy check below, and the two decide different things.
+    const callerVerdict = await resolveCaller(admin, accessToken)
+    if (!callerVerdict.ok) return callerRefusalResponse(callerVerdict)
+    const caller = callerVerdict.caller
 
     // Read the payment from Pi. Everything checked below comes from this
     // record, not from the request body.

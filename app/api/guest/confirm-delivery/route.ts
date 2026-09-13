@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
-import { resolveCaller } from "@/lib/route-auth"
+import { callerRefusalResponse, resolveCaller } from "@/lib/route-auth"
 import { hashDeliveryCode, hashesMatch } from "@/lib/delivery-code"
 import { STAMP_SENDER, STAMP_COURIER_CODE, hasStamp } from "@/lib/delivery-stamps"
 import { verifyLast4 } from "@/lib/last4-guard"
@@ -122,10 +122,12 @@ export async function POST(req: NextRequest) {
     if (!body.accessToken) {
       return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 })
     }
-    const caller = await resolveCaller(admin, body.accessToken)
-    if (!caller) {
-      return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 })
-    }
+    // resolveCaller now says WHY it refused. A 401 means the caller is not who
+    // they need to be; a 503 means we could not ask Supabase Auth, which is a
+    // different thing and used to be reported as the first one.
+    const verdict = await resolveCaller(admin, body.accessToken)
+    if (!verdict.ok) return callerRefusalResponse(verdict)
+    const caller = verdict.caller
     if (!data.assigned_courier || data.assigned_courier !== caller.pi_username) {
       return NextResponse.json({ ok: false, reason: "not_assigned" }, { status: 403 })
     }

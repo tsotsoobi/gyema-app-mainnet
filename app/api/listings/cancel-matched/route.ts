@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { ListingActionBody, parseJsonBody } from "@/lib/schemas"
-import { resolveCaller } from "@/lib/route-auth"
+import { callerRefusalResponse, resolveCaller } from "@/lib/route-auth"
 
 // Cancel a MATCHED or IN TRANSIT listing when a deal falls through. Either
 // party may call it: the poster or the Pioneer who claimed it.
@@ -35,10 +35,12 @@ export async function POST(request: NextRequest) {
     const { accessToken, listingId } = parsed.data
 
     const admin = createAdminClient()
-    const caller = await resolveCaller(admin, accessToken)
-    if (!caller) {
-      return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 })
-    }
+    // resolveCaller now says WHY it refused. A 401 means the caller is not who
+    // they need to be; a 503 means we could not ask Supabase Auth, which is a
+    // different thing and used to be reported as the first one.
+    const verdict = await resolveCaller(admin, accessToken)
+    if (!verdict.ok) return callerRefusalResponse(verdict)
+    const caller = verdict.caller
     if (!SAFE_UID.test(caller.pi_uid)) {
       console.error("[gyema] cancel-matched: uid failed the filter safety check")
       return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 })

@@ -88,8 +88,65 @@ export class AdminMock {
     return this
   }
 
+  /**
+   * A token GoTrue looked at and rejected.
+   *
+   * Shaped like the AuthApiError auth-js actually returns, because the shape
+   * is now load-bearing. This used to be `{ message: "invalid token" }` with
+   * no status, which auth-js never produces: a real rejection always carries
+   * one. lib/route-auth.ts reads the status to tell a bad token from an
+   * unreachable auth service, so a mock without one was testing a case that
+   * cannot happen and hiding the one that did on 13 September.
+   */
   asAnonymousFailure() {
-    this.user = { data: null, error: { message: "invalid token" } }
+    this.user = {
+      data: null,
+      error: {
+        __isAuthError: true,
+        name: "AuthApiError",
+        message: "invalid claim: missing sub claim",
+        status: 401,
+        code: "bad_jwt",
+      },
+    }
+    return this
+  }
+
+  /**
+   * Supabase Auth could not be reached, which is a different failure.
+   *
+   * This is the 13 September Mainnet incident: a Pioneer posted at 07:44:07,
+   * was refused at 07:45:16 and posted again at 07:46:34 on one unchanged
+   * token with a single verify in auth_events. getUser returns an
+   * AuthRetryableFetchError rather than throwing it, so it arrived on the same
+   * branch as an expired token and the Pioneer was told they were not signed
+   * in.
+   */
+  asAuthUnavailable() {
+    this.user = {
+      data: null,
+      error: {
+        __isAuthError: true,
+        name: "AuthRetryableFetchError",
+        message: "Failed to fetch",
+        status: 503,
+      },
+    }
+    return this
+  }
+
+  /** Auth answered, but rate limited us. Also not the token's fault. */
+  asAuthRateLimited() {
+    this.user = {
+      data: null,
+      error: {
+        __isAuthError: true,
+        name: "AuthApiError",
+        message: "Request rate limit reached",
+        status: 429,
+        code: "over_request_rate_limit",
+      },
+    }
     return this
   }
 
