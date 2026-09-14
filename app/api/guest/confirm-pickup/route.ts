@@ -10,6 +10,19 @@ export const runtime = "nodejs"
 // phone form the guard (a speed bump, not auth, per the handshake spec).
 // Only an accepted job can be confirmed. Idempotent on re-confirm.
 // Never expose sender_phone or any contact field in any response.
+//
+// THIS ROUTE WRITES STATUS. The UPDATE that stamps pickup_confirmed_at also
+// moves the job from accepted to in_transit, and writes updated_at from the
+// same timestamp, so the dispatch reader ages an in transit row from its
+// pickup rather than from its accept. Before this, no route wrote in_transit
+// and every guest job waited on an operator flip before either delivery
+// sign-off could land (confirm-delivery and guest_stamp_delivery both require
+// in_transit). The guards are the ones the stamp always had: the flip lands
+// only on the row the stamp lands on, and only from accepted.
+//
+// A row stamped before this change returns at the idempotent check below and
+// never reaches the write, so it needs one hand flip. Section 5 of
+// scripts/dispatch-reader.mjs lists any such row and is expected to be empty.
 export async function POST(req: NextRequest) {
   // The shared last-4 bucket: a hundred and twenty an hour per address across
   // all three sender-side routes, because they are one handshake by one
@@ -67,13 +80,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, reason: "not_confirmable" }, { status: 409 })
   }
 
+  const now = new Date().toISOString()
   const { data: updated, error: updErr } = await admin
     .from("guest_jobs")
-    .update({ pickup_confirmed_at: new Date().toISOString(), pickup_confirmed_by: "sender" })
+    .update({
+      pickup_confirmed_at: now,
+      pickup_confirmed_by: "sender",
+      status: "in_transit",
+      updated_at: now,
+    })
     .eq("tracking_id", trackingId)
     .eq("status", "accepted")
     .is("pickup_confirmed_at", null)
-    .select("pickup_confirmed_at")
+    .select("pickup_confirmed_at, status")
     .maybeSingle()
   if (updErr) {
     console.error("[gyema] confirm-pickup update error:", updErr)

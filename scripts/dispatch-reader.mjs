@@ -455,8 +455,9 @@ const SECTIONS = [
 
   {
     id: 5,
-    title: "FLIP 1 READY",
-    subtitle: "status accepted and pickup_confirmed_at is not null. The in_transit flip is now safe on these rows.",
+    title: "PICKUP STAMPED, STILL ACCEPTED (alarm, expected empty)",
+    subtitle:
+      "status accepted and pickup_confirmed_at is not null. This section should be empty. app/api/guest/confirm-pickup/route.ts writes status in_transit in the same statement that writes pickup_confirmed_at, so a pickup stamp cannot land without the flip. A row here means the automation did not fire on it: the stamp predates the change reaching this network, or something other than the route wrote it. Review the row before any hand flip.",
     table: "public.guest_jobs_dispatch",
     where: "status = 'accepted' and pickup_confirmed_at is not null",
     order: "pickup_confirmed_at asc",
@@ -473,7 +474,7 @@ const SECTIONS = [
       "quote_cedis",
     ],
     render: (r) => ({
-      flags: ["FLIP 1 READY: the operator in_transit flip is now safe on this row"],
+      flags: ["ALARM: pickup stamped but status is still accepted. The confirm-pickup automation did not fire on this row. Review before any hand flip."],
       age: r.pickup_confirmed_at_age_secs,
       ageLabel: "stamped",
       fields: [
