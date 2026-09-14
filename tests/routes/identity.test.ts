@@ -115,6 +115,8 @@ describe("every route reads app_metadata, never user_metadata", () => {
 
   it("guest/accept assigns the app_metadata username as courier", async () => {
     mock.asPioneer("pi-real", "real_courier")
+    // accept reads the quote before it claims.
+    mock.queue({ data: { quote_cedis: 40 }, error: null })
     mock.queue({ data: { tracking_id: "GYM-A1B2C3" }, error: null })
     await guestAccept.POST(
       postJson("http://localhost/x", {

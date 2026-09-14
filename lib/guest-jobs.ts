@@ -12,6 +12,26 @@ export type GuestJobStatus =
   | "cancelled"
   | "expired"
 
+// Display helpers for the courier-facing money lines. Formatting only: every
+// figure they format was computed on the server by lib/guest-commission.ts
+// and arrived in an API response. Nothing in this file does arithmetic on money.
+
+/** A cedi amount as a courier reads it, always to two decimal places. */
+export function formatCedis(value: number): string {
+  return value.toFixed(2)
+}
+
+/**
+ * How the sender said they will pay, as a label, or null when it was not
+ * recorded. A null payment_type used to display as "cash", which was a claim
+ * the row did not make.
+ */
+export function paymentLabel(paymentType: string | null | undefined): string | null {
+  if (paymentType === "momo") return "MoMo"
+  if (paymentType === "cash") return "cash"
+  return null
+}
+
 export type GuestJobView = {
   kind: "guest"
   trackingId: string
@@ -120,6 +140,11 @@ export type OpenGuestJob = {
   scheduledDate: string | null
   paymentType: string | null
   quoteCedis: number | null
+  // A preview at the current rate from /api/guest/open. Nothing is recorded
+  // until accept, which writes the figure with the same server function.
+  commissionCedis: number | null
+  keepsCedis: number | null
+  commissionRateLabel: string | null
   createdAt: string
 }
 
@@ -133,6 +158,11 @@ export type AcceptedGuestJob = {
   recipientPhone: string | null
   quoteCedis: number | null
   paymentType: string | null
+  // As written by the claim: remit_cedis as stored, and what the courier
+  // keeps derived from it on the server.
+  remitCedis: number | null
+  keepsCedis: number | null
+  commissionRateLabel: string | null
 }
 
 // A guest job as its assigned courier sees it, for the persistent My Activity
@@ -151,6 +181,12 @@ export type CourierGuestJob = {
   recipientName: string | null
   recipientPhone: string | null
   quoteCedis: number | null
+  // What this courier owes Gyema on this job, as recorded at accept, and what
+  // they keep. Null on a job with no commission recorded. commissionRateLabel
+  // is null when the recorded figure is not the current rate's.
+  remitCedis: number | null
+  keepsCedis: number | null
+  commissionRateLabel: string | null
   paymentType: string | null
   whenPref: string | null
   scheduledDate: string | null
@@ -276,6 +312,9 @@ export async function acceptGuestJobAsync(input: {
       recipientPhone: j.recipient_phone,
       quoteCedis: j.quote_cedis,
       paymentType: j.payment_type,
+      remitCedis: j.remit_cedis ?? null,
+      keepsCedis: j.keeps_cedis ?? null,
+      commissionRateLabel: j.commission_rate_label ?? null,
     }
   } catch (err) {
     console.error("acceptGuestJobAsync error:", err)
