@@ -167,6 +167,29 @@ describe("GET /api/guest/open", () => {
     expect(selected).not.toContain("sender_phone")
     expect(selected).not.toContain("delivery_code_hash")
   })
+
+  // Off-list option (a): accept refuses a job with no quote, so the board
+  // never shows one.
+  it("leaves a posted job with no quote off the board", async () => {
+    mock.queue({ data: [], error: null })
+    await open.GET(get("http://localhost/api/guest/open") as never)
+    expect(mock.trace()).toContain('gt("quote_cedis", 0)')
+  })
+
+  it("previews the courier's split from the server function, never a remit column", async () => {
+    mock.queue({
+      data: [
+        { tracking_id: JOB, quote_cedis: 50 },
+        { tracking_id: "GYM-D4E5F6", quote_cedis: 25 },
+      ],
+      error: null,
+    })
+    const res = await open.GET(get("http://localhost/api/guest/open") as never)
+    const { jobs } = await res.json()
+    expect(jobs[0]).toMatchObject({ quoteCedis: 50, commissionCedis: 4, keepsCedis: 46, commissionRateLabel: "7.5%" })
+    expect(jobs[1]).toMatchObject({ quoteCedis: 25, commissionCedis: 2, keepsCedis: 23, commissionRateLabel: "7.5%" })
+    expect(mock.selectedColumns()).not.toContain("remit_")
+  })
 })
 
 describe("POST /api/guest/accept", () => {
@@ -179,6 +202,7 @@ describe("POST /api/guest/accept", () => {
 
   it("claims only a verified, posted, unassigned job and never selects sender_phone", async () => {
     mock.asPioneer("pi-uid-1", "courier_one")
+    mock.queue({ data: { quote_cedis: 40 }, error: null })
     mock.queue({ data: { tracking_id: JOB, recipient_name: "Ama" }, error: null })
     const res = await accept.POST(
       postJson("http://localhost/x", { accessToken: "good", trackingId: JOB }) as never
@@ -198,6 +222,7 @@ describe("POST /api/guest/accept", () => {
   // reached any door.
   it("never returns the delivery code to the accepter", async () => {
     mock.asPioneer("pi-uid-1", "courier_one")
+    mock.queue({ data: { quote_cedis: 40 }, error: null })
     mock.queue({ data: { tracking_id: JOB }, error: null })
     const res = await accept.POST(
       postJson("http://localhost/x", { accessToken: "good", trackingId: JOB }) as never
@@ -212,6 +237,7 @@ describe("POST /api/guest/accept", () => {
 
   it("still stores the hash, so the sender can be shown the code later", async () => {
     mock.asPioneer("pi-uid-1", "courier_one")
+    mock.queue({ data: { quote_cedis: 40 }, error: null })
     mock.queue({ data: { tracking_id: JOB }, error: null })
     await accept.POST(
       postJson("http://localhost/x", { accessToken: "good", trackingId: JOB }) as never
@@ -220,6 +246,98 @@ describe("POST /api/guest/accept", () => {
     const row = update?.args[0] as Record<string, unknown>
     expect(typeof row.delivery_code_hash).toBe("string")
     expect((row.delivery_code_hash as string).length).toBe(64)
+  })
+
+  // The commission is computed on the server from the quote on the row, and
+  // written in the same UPDATE that assigns the courier.
+  it("writes remit_cedis from the quote it read, in the claim itself, guarded on that quote", async () => {
+    mock.asPioneer("pi-uid-1", "courier_one")
+    mock.queue(
+      { data: { quote_cedis: 70 }, error: null },
+      { data: { tracking_id: JOB, quote_cedis: 70, remit_cedis: 5.5, payment_type: "momo" }, error: null }
+    )
+    const res = await accept.POST(
+      postJson("http://localhost/x", { accessToken: "good", trackingId: JOB }) as never
+    )
+    const updates = mock.calls.filter((c) => c.method === "update")
+    expect(updates).toHaveLength(1)
+    const row = updates[0].args[0] as Record<string, unknown>
+    expect(row.remit_cedis).toBe(5.5)
+    expect(row.assigned_courier).toBe("courier_one")
+    // The guard on the quote comes after the update, on the same statement.
+    const trace = mock.trace()
+    const updateAt = trace.findIndex((t) => t.startsWith("update("))
+    expect(trace.indexOf('eq("quote_cedis", 70)')).toBeGreaterThan(updateAt)
+    // The figures returned are the ones written, not a recomputation.
+    const { job } = await res.json()
+    expect(job).toMatchObject({ quote_cedis: 70, remit_cedis: 5.5, keeps_cedis: 64.5, commission_rate_label: "7.5%" })
+  })
+
+  it("takes no commission figure from the request body", async () => {
+    mock.asPioneer("pi-uid-1", "courier_one")
+    mock.queue({ data: { quote_cedis: 40 }, error: null }, { data: { tracking_id: JOB }, error: null })
+    await accept.POST(
+      postJson("http://localhost/x", {
+        accessToken: "good",
+        trackingId: JOB,
+        remitCedis: 0,
+        remit_cedis: 0,
+        quoteCedis: 1000,
+      }) as never
+    )
+    // GuestAcceptBody is not strict, so the extra fields are stripped and the
+    // claim runs. The write carries the server's figure for the quote it read.
+    const row = mock.calls.find((c) => c.method === "update")?.args[0] as Record<string, unknown>
+    expect(row.remit_cedis).toBe(3)
+    expect(mock.trace().join(" ")).not.toContain("1000")
+  })
+
+  it("refuses a job with no quote and writes nothing", async () => {
+    mock.asPioneer("pi-uid-1", "courier_one")
+    mock.queue({ data: { quote_cedis: null }, error: null })
+    const res = await accept.POST(
+      postJson("http://localhost/x", { accessToken: "good", trackingId: JOB }) as never
+    )
+    expect(await res.json()).toMatchObject({ ok: false, reason: "not_open" })
+    expect(mock.calls.some((c) => c.method === "update")).toBe(false)
+  })
+
+  it("refuses a job that is not claimable and writes nothing", async () => {
+    mock.asPioneer("pi-uid-1", "courier_one")
+    mock.queue({ data: null, error: null })
+    const res = await accept.POST(
+      postJson("http://localhost/x", { accessToken: "good", trackingId: JOB }) as never
+    )
+    expect(await res.json()).toMatchObject({ ok: false, reason: "not_open" })
+    expect(mock.calls.some((c) => c.method === "update")).toBe(false)
+  })
+
+  it("refuses when the quote changed between the read and the claim", async () => {
+    mock.asPioneer("pi-uid-1", "courier_one")
+    // The read sees 40. The guarded update then matches nothing, which is what
+    // PostgREST reports as an error on .single().
+    mock.queue(
+      { data: { quote_cedis: 40 }, error: null },
+      { data: null, error: { code: "PGRST116", message: "no rows" } }
+    )
+    const res = await accept.POST(
+      postJson("http://localhost/x", { accessToken: "good", trackingId: JOB }) as never
+    )
+    expect(await res.json()).toMatchObject({ ok: false, reason: "not_open" })
+    expect(mock.trace()).toContain('eq("quote_cedis", 40)')
+  })
+
+  it("returns remit_cedis but no other remit column", async () => {
+    mock.asPioneer("pi-uid-1", "courier_one")
+    mock.queue({ data: { quote_cedis: 40 }, error: null }, { data: { tracking_id: JOB }, error: null })
+    await accept.POST(
+      postJson("http://localhost/x", { accessToken: "good", trackingId: JOB }) as never
+    )
+    const selected = mock.selectedColumns()
+    expect(selected).toContain("remit_cedis")
+    for (const hidden of ["remit_pi", "remit_rate", "remit_method", "remit_paid_at", "remit_ref"]) {
+      expect(selected).not.toContain(hidden)
+    }
   })
 })
 
@@ -248,6 +366,29 @@ describe("POST /api/guest/mine", () => {
     // Identity comes from the token, not from the body.
     expect(mock.trace()).toContain('eq("assigned_courier", "courier_one")')
     expect(mock.trace().join(" ")).not.toContain("someone_else")
+  })
+
+  it("returns the commission as recorded, never recomputed at the current rate", async () => {
+    mock.asPioneer("pi-uid-1", "courier_one")
+    mock.queue({
+      data: [
+        { tracking_id: JOB, status: "accepted", quote_cedis: 40, remit_cedis: 3, delivery_code_hash: null },
+        // A 5% remit recorded before this rate. It stays 2.00, with no rate label.
+        { tracking_id: "GYM-D4E5F6", status: "delivered", quote_cedis: 40, remit_cedis: 2, delivery_code_hash: null },
+        // Nothing recorded: no split is shown at all.
+        { tracking_id: "GYM-G7H8J9", status: "delivered", quote_cedis: 40, remit_cedis: null, delivery_code_hash: null },
+      ],
+      error: null,
+    })
+    const res = await mine.POST(postJson("http://localhost/x", { accessToken: "good" }) as never)
+    const { jobs } = await res.json()
+    expect(jobs[0]).toMatchObject({ remitCedis: 3, keepsCedis: 37, commissionRateLabel: "7.5%" })
+    expect(jobs[1]).toMatchObject({ remitCedis: 2, keepsCedis: 38, commissionRateLabel: null })
+    expect(jobs[2]).toMatchObject({ remitCedis: null, keepsCedis: null, commissionRateLabel: null })
+    const selected = mock.selectedColumns()
+    for (const hidden of ["remit_pi", "remit_rate", "remit_method", "remit_paid_at", "remit_ref"]) {
+      expect(selected).not.toContain(hidden)
+    }
   })
 })
 

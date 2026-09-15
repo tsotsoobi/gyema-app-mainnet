@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/sheet"
 import {
   acceptGuestJobAsync,
+  formatCedis,
+  paymentLabel,
   type AcceptedGuestJob,
   type OpenGuestJob,
 } from "@/lib/guest-jobs"
@@ -45,8 +47,11 @@ export function GuestJobCard({
               </Badge>
             </div>
           </div>
+          {/* What the courier keeps, not the gross quote: a bare price on the
+              board reads as earnings. The board only lists priced jobs, so the
+              fallback is a guard, not a state a courier should see. */}
           <div className="gyema-gold-gradient rounded-md px-2.5 py-1 text-xs font-bold text-amber-950 whitespace-nowrap">
-            {job.quoteCedis ?? "?"} GHS
+            {job.keepsCedis !== null ? `You keep ${formatCedis(job.keepsCedis)} GHS` : "Not priced"}
           </div>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -129,16 +134,30 @@ export function GuestJobSheet({
                 Phone-verified sender
               </Badge>
             </div>
-            <p className="text-2xl font-bold" style={{ color: "#15803D" }}>
-              {job.quoteCedis ?? "?"} GHS
-              <span className="text-sm font-normal text-muted-foreground">
-                {" "}paid to you on delivery
-              </span>
-            </p>
+            {/* The courier's split. Every figure came from the server; what the
+                courier keeps is the headline because it is what they earn. */}
+            {job.keepsCedis !== null && job.commissionCedis !== null ? (
+              <div className="space-y-1">
+                <p className="text-2xl font-bold" style={{ color: "#15803D" }}>
+                  <span className="text-sm font-normal text-muted-foreground">You keep: </span>
+                  {formatCedis(job.keepsCedis)} GHS
+                </p>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Collect at the door:</span>{" "}
+                  {job.quoteCedis !== null ? formatCedis(job.quoteCedis) : "?"} GHS
+                  {paymentLabel(job.paymentType) ? ` (${paymentLabel(job.paymentType)})` : ""}
+                </p>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">You owe Gyema:</span>{" "}
+                  {formatCedis(job.commissionCedis)} GHS
+                  {job.commissionRateLabel ? ` (${job.commissionRateLabel})` : ""}
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">This delivery is not priced yet.</p>
+            )}
             <p className="text-xs text-muted-foreground">
-              You keep the full amount, {job.paymentType === "momo" ? "MoMo" : "cash"} on
-              delivery. No Pi fee. Landmarks and recipient contact are revealed
-              once you accept.
+              Landmarks and recipient contact are revealed once you accept.
             </p>
             <div className="space-y-1.5">
               <Label htmlFor="gj-wa">Your WhatsApp number</Label>
@@ -174,7 +193,13 @@ export function GuestJobSheet({
               <p><span className="text-muted-foreground">Pickup:</span> {revealed.pickupArea}{revealed.pickupLandmark ? `, ${revealed.pickupLandmark}` : ""}</p>
               <p><span className="text-muted-foreground">Recipient:</span> {revealed.recipientName ?? "-"} {revealed.recipientPhone ? `(${revealed.recipientPhone})` : ""}</p>
               <p><span className="text-muted-foreground">Drop-off:</span> {revealed.dropoffArea}{revealed.dropoffLandmark ? `, ${revealed.dropoffLandmark}` : ""}</p>
-              <p><span className="text-muted-foreground">You collect:</span> {revealed.quoteCedis} GHS ({revealed.paymentType === "momo" ? "MoMo" : "cash"})</p>
+              <p><span className="text-muted-foreground">Collect at the door:</span> {revealed.quoteCedis !== null ? formatCedis(revealed.quoteCedis) : "?"} GHS{paymentLabel(revealed.paymentType) ? ` (${paymentLabel(revealed.paymentType)})` : ""}</p>
+              {revealed.keepsCedis !== null && revealed.remitCedis !== null && (
+                <>
+                  <p><span className="text-muted-foreground">You keep:</span> <span className="font-semibold" style={{ color: "#15803D" }}>{formatCedis(revealed.keepsCedis)} GHS</span></p>
+                  <p><span className="text-muted-foreground">You owe Gyema:</span> {formatCedis(revealed.remitCedis)} GHS{revealed.commissionRateLabel ? ` (${revealed.commissionRateLabel})` : ""}</p>
+                </>
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
               Gyema dispatch will message you on WhatsApp to coordinate. The

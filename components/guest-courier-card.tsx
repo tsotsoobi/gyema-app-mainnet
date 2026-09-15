@@ -6,7 +6,12 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { submitDeliveryCodeAsync, type CourierGuestJob } from "@/lib/guest-jobs"
+import {
+  formatCedis,
+  paymentLabel,
+  submitDeliveryCodeAsync,
+  type CourierGuestJob,
+} from "@/lib/guest-jobs"
 import { describeStamps, hasStamp, STAMP_COURIER_CODE } from "@/lib/delivery-stamps"
 
 // The persistent card for a guest job this courier has accepted. Deliberately
@@ -104,7 +109,14 @@ export function GuestCourierCard({ job }: { job: CourierGuestJob }) {
             muted ? "bg-muted" : "gyema-gold-gradient"
           }`}
         >
-          {job.quoteCedis ?? "?"} GHS
+          {/* What the courier keeps, as recorded at accept. A job with no
+              commission recorded has no keep figure, so the gross quote is
+              shown instead, and labelled as what is collected. */}
+          {job.keepsCedis !== null
+            ? `You keep ${formatCedis(job.keepsCedis)} GHS`
+            : job.quoteCedis !== null
+              ? `Collect ${formatCedis(job.quoteCedis)} GHS`
+              : "Not priced"}
         </div>
       </div>
 
@@ -133,9 +145,27 @@ export function GuestCourierCard({ job }: { job: CourierGuestJob }) {
           {when ? ` \u00b7 ${when}` : ""}
         </p>
         <p>
-          <span className="text-muted-foreground">You collect:</span>{" "}
-          {job.quoteCedis ?? "?"} GHS ({job.paymentType === "momo" ? "MoMo" : "cash"})
+          <span className="text-muted-foreground">Collect at the door:</span>{" "}
+          {job.quoteCedis !== null ? formatCedis(job.quoteCedis) : "?"} GHS
+          {paymentLabel(job.paymentType) ? ` (${paymentLabel(job.paymentType)})` : ""}
         </p>
+        {/* Recorded at accept and read back as written. Absent on a job with
+            no commission recorded for it. */}
+        {job.keepsCedis !== null && job.remitCedis !== null && (
+          <>
+            <p>
+              <span className="text-muted-foreground">You keep:</span>{" "}
+              <span className="font-semibold" style={{ color: "#15803D" }}>
+                {formatCedis(job.keepsCedis)} GHS
+              </span>
+            </p>
+            <p>
+              <span className="text-muted-foreground">You owe Gyema:</span>{" "}
+              {formatCedis(job.remitCedis)} GHS
+              {job.commissionRateLabel ? ` (${job.commissionRateLabel})` : ""}
+            </p>
+          </>
+        )}
       </div>
 
       {/* The card's only write. Plainly labelled: the courier is being asked

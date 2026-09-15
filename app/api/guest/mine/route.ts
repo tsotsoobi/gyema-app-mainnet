@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { callerRefusalResponse, resolveCaller } from "@/lib/route-auth"
 import { GuestMineBody, parseJsonBody } from "@/lib/schemas"
+import { recordedSplit } from "@/lib/guest-commission"
 
 // The courier's own accepted guest jobs. Before this route the accept sheet
 // was the only view of a claimed job, so the job vanished when the sheet
@@ -21,12 +22,15 @@ import { GuestMineBody, parseJsonBody } from "@/lib/schemas"
 export const runtime = "nodejs"
 
 // Explicit column list. NEVER select() or select("*"): guest_jobs holds
-// sender_phone and the remit_* settlement economics (remit_cedis, remit_pi,
-// remit_rate, remit_method, remit_paid_at, remit_ref), none of which may
-// reach a client. Declared as an array so each column sits on its own line
-// and the list stays verifiable at a glance.
+// sender_phone and the remit_* settlement columns (remit_cedis, remit_pi,
+// remit_rate, remit_method, remit_paid_at, remit_ref). Of those, remit_cedis
+// alone reaches a client, and only the courier this route has matched as the
+// job's assigned_courier, who is the person who owes it. remit_pi,
+// remit_rate, remit_method, remit_paid_at and remit_ref never do. Declared as
+// an array so each column sits on its own line and the list stays verifiable
+// at a glance.
 //
-// 18 columns. sender_phone is not one of them and must never be added here.
+// 19 columns. sender_phone is not one of them and must never be added here.
 //
 // delivery_code_hash is the one column selected for something other than
 // display: the mapper below emits its NULLITY as hasDeliveryCode and drops
@@ -44,6 +48,7 @@ const COURIER_JOB_COLUMNS = [
   "recipient_phone",
   "quote_cedis",
   "payment_type",
+  "remit_cedis",
   "when_pref",
   "scheduled_date",
   "status",
@@ -54,7 +59,7 @@ const COURIER_JOB_COLUMNS = [
   "delivery_code_hash",
 ].join(", ")
 
-// The row those 18 columns produce. Declared explicitly because supabase-js
+// The row those 19 columns produce. Declared explicitly because supabase-js
 // can only infer a row shape from a string LITERAL passed to .select(); given
 // a joined constant it falls back to GenericStringError and the mapper below
 // stops typechecking. Keep this in sync with COURIER_JOB_COLUMNS.
@@ -69,6 +74,7 @@ type GuestJobRow = {
   recipient_phone: string | null
   quote_cedis: number | null
   payment_type: string | null
+  remit_cedis: number | null
   when_pref: string | null
   scheduled_date: string | null
   status: string
@@ -122,28 +128,37 @@ export async function POST(request: NextRequest) {
     const rows = (data ?? []) as unknown as GuestJobRow[]
     return NextResponse.json({
       ok: true,
-      jobs: rows.map((j) => ({
-        kind: "guest",
-        trackingId: j.tracking_id,
-        pickupArea: j.pickup_area,
-        pickupLandmark: j.pickup_landmark,
-        dropoffArea: j.dropoff_area,
-        dropoffLandmark: j.dropoff_landmark,
-        packageSize: j.package_size,
-        recipientName: j.recipient_name,
-        recipientPhone: j.recipient_phone,
-        quoteCedis: j.quote_cedis,
-        paymentType: j.payment_type,
-        whenPref: j.when_pref,
-        scheduledDate: j.scheduled_date,
-        status: j.status,
-        pickupConfirmedAt: j.pickup_confirmed_at,
-        pickupConfirmedBy: j.pickup_confirmed_by,
-        deliveryConfirmedAt: j.delivery_confirmed_at,
-        deliveryConfirmedBy: j.delivery_confirmed_by,
-        // Nullity only. The hash itself stops here.
-        hasDeliveryCode: j.delivery_code_hash !== null,
-      })),
+      jobs: rows.map((j) => {
+        // As recorded at accept, never recomputed. A job accepted at an earlier
+        // rate shows its recorded figure and no rate label; a job with nothing
+        // recorded shows no split at all.
+        const owed = recordedSplit(j.quote_cedis, j.remit_cedis)
+        return {
+          kind: "guest",
+          trackingId: j.tracking_id,
+          pickupArea: j.pickup_area,
+          pickupLandmark: j.pickup_landmark,
+          dropoffArea: j.dropoff_area,
+          dropoffLandmark: j.dropoff_landmark,
+          packageSize: j.package_size,
+          recipientName: j.recipient_name,
+          recipientPhone: j.recipient_phone,
+          quoteCedis: j.quote_cedis,
+          remitCedis: owed?.commissionCedis ?? null,
+          keepsCedis: owed?.keepsCedis ?? null,
+          commissionRateLabel: owed?.rateLabel ?? null,
+          paymentType: j.payment_type,
+          whenPref: j.when_pref,
+          scheduledDate: j.scheduled_date,
+          status: j.status,
+          pickupConfirmedAt: j.pickup_confirmed_at,
+          pickupConfirmedBy: j.pickup_confirmed_by,
+          deliveryConfirmedAt: j.delivery_confirmed_at,
+          deliveryConfirmedBy: j.delivery_confirmed_by,
+          // Nullity only. The hash itself stops here.
+          hasDeliveryCode: j.delivery_code_hash !== null,
+        }
+      }),
     })
   } catch (err) {
     console.error("[gyema] guest courier jobs route error:", err)

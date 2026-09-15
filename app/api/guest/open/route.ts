@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { checkLimit, ipIdentifier, retryAfterHeaders } from "@/lib/rate-limit"
+import { courierSplit } from "@/lib/guest-commission"
 
 export const runtime = "nodejs"
 
 // Open guest jobs for the Traveller board. Sanitized: quote and route only,
 // never phones, landmarks, or names. Those reveal only on accept.
+//
+// Each job carries a preview of the courier's split at the current rate, from
+// lib/guest-commission.ts. Nothing is recorded here: accept computes the
+// written figure with the same function. A posted job with no quote is left
+// off the board, because accept refuses it and a courier should not be shown
+// a job they cannot take.
 export async function GET(request: NextRequest) {
   // Sixty per ten minutes per address, and it fails open on a Redis error.
   // The payload carries nothing sensitive, so the only thing a limit protects
@@ -27,6 +34,7 @@ export async function GET(request: NextRequest) {
       .eq("phone_verified", true)
       .eq("status", "posted")
       .is("assigned_courier", null)
+      .gt("quote_cedis", 0)
       .order("created_at", { ascending: false })
       .limit(20)
     if (error) {
@@ -35,18 +43,24 @@ export async function GET(request: NextRequest) {
     }
     return NextResponse.json({
       ok: true,
-      jobs: (data ?? []).map((j) => ({
-        kind: "guest",
-        trackingId: j.tracking_id,
-        pickupArea: j.pickup_area,
-        dropoffArea: j.dropoff_area,
-        packageSize: j.package_size,
-        whenPref: j.when_pref,
-        scheduledDate: j.scheduled_date,
-        paymentType: j.payment_type,
-        quoteCedis: j.quote_cedis,
-        createdAt: j.created_at,
-      })),
+      jobs: (data ?? []).map((j) => {
+        const split = courierSplit(j.quote_cedis)
+        return {
+          kind: "guest",
+          trackingId: j.tracking_id,
+          pickupArea: j.pickup_area,
+          dropoffArea: j.dropoff_area,
+          packageSize: j.package_size,
+          whenPref: j.when_pref,
+          scheduledDate: j.scheduled_date,
+          paymentType: j.payment_type,
+          quoteCedis: j.quote_cedis,
+          commissionCedis: split?.commissionCedis ?? null,
+          keepsCedis: split?.keepsCedis ?? null,
+          commissionRateLabel: split?.rateLabel ?? null,
+          createdAt: j.created_at,
+        }
+      }),
     })
   } catch (err) {
     console.error("[gyema] guest open jobs error:", err)
