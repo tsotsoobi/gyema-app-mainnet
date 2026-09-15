@@ -16,11 +16,12 @@
 //
 // SECTION 0, THE INTEGRITY CHECKS
 //
-// Four checks run after the preflight and before the queue sections, on every
+// Five checks run after the preflight and before the queue sections, on every
 // report. They exist because the problems they look for were found by hand
-// rather than surfaced: free text stored untrimmed since July, and status
-// values living in the table that the declared TypeScript union does not
-// carry. A finding is a data condition, not a script failure. Nothing halts
+// rather than surfaced: free text stored untrimmed since July, status values
+// living in the table that the declared TypeScript union does not carry, and
+// a commission that accept always writes going missing on a claimed job. A
+// finding is a data condition, not a script failure. Nothing halts
 // and the exit code does not move. A check that cannot run says so and sets
 // exit 2, exactly as a failed section does, because a check that did not run
 // must never read as a check that found nothing.
@@ -48,8 +49,10 @@
 // gitignored .env.local or in the shell, and which authenticates as
 // gyema_reader: SELECT on public.guest_jobs_dispatch and
 // public.listings_dispatch, and nothing else. Not on the base tables, so
-// delivery_code_hash, the raw phone columns and the remit_* settlement
-// columns are unreachable from here even by mistake.
+// delivery_code_hash and the raw phone columns are unreachable from here even
+// by mistake. Of the remit_* settlement columns, the view carries exactly two:
+// remit_paid_at, and remit_cedis, the commission accept records. remit_pi,
+// remit_rate, remit_method and remit_ref are not in it.
 //
 // GYEMA_READER_CA_CERT is also required, and is the path to the project CA
 // certificate. The connection is refused without it: see the TLS block in
@@ -124,6 +127,33 @@ const DECLARED_GUEST_STATUSES = [
 // here concludes anything from that on its own.
 const DELIVERY_CODE_SHIPPED = "2026-08-13"
 
+// The window in which the courier commission shipped, commit 792bfd3 on
+// Testnet and its mirror eb634ff on Mainnet. From then on, /api/guest/accept
+// writes remit_cedis in the same UPDATE that claims the job, and refuses a job
+// with no usable quote. Before it, nothing in the application wrote
+// remit_cedis at all: any value on an older row was set by hand.
+//
+// Both bounds come from Production deployment records, with one hour of margin
+// added outward on each side, because a deployment record is created before
+// its build serves traffic:
+//
+//   EARLIEST  Testnet deployment 6441956927, created 2026-09-14T16:48:36Z,
+//             less one hour.
+//   LATEST    Mainnet deployment 6449391484, created 2026-09-15T00:51:41Z,
+//             plus one hour.
+//
+// Both values are the same on both networks, so this file stays byte
+// identical between them. The price of that is a wider window on each network
+// than its own deploy would give, and a row inside the window reads as
+// "cannot tell". That is a safe answer: EARLIEST only ever proves a row is
+// older than the commission, and LATEST only ever proves a row is newer.
+//
+// Section 8b labels rows against both, and check 0.5 filters on LATEST. Each
+// is written as a timestamptz literal with an explicit UTC offset, so the
+// comparison does not depend on the session timezone this script pins.
+const COMMISSION_SHIPPED_EARLIEST = "2026-09-14 15:48:36+00"
+const COMMISSION_SHIPPED_LATEST = "2026-09-15 01:51:41+00"
+
 const SHOW_SQL = process.env.GYEMA_DISPATCH_SHOW_SQL === "1"
 
 // ---------------------------------------------------------------------------
@@ -172,6 +202,7 @@ const REQUIRED_COLUMNS = {
     "delivery_confirmed_by",
     "delivery_code_attempts",
     "remit_paid_at",
+    "remit_cedis",
   ],
   listings_dispatch: [
     "tracking_id",
@@ -245,6 +276,26 @@ function show(value) {
 
 function field(label, value) {
   return `    ${label.padEnd(LABEL_WIDTH)} ${value}`
+}
+
+// Places a section 8b row against the commission window, from the two booleans
+// Postgres computed for it. Only a strict true counts as evidence. A null,
+// which is what a comparison against a null stamp yields, is no evidence
+// either way, and never reads as false.
+function commissionEra(row) {
+  const createdAfter = row.created_after_window === true
+  const stampedBefore = row.stamped_before_window === true
+  if (createdAfter && stampedBefore) return "inconsistent"
+  if (createdAfter) return "data_gap"
+  if (stampedBefore) return "pre_change"
+  return "cannot_tell"
+}
+
+const COMMISSION_ERA_LABELS = {
+  pre_change: "older than the commission: a stamp predates the window",
+  data_gap: "data gap: created after the window, no commission written",
+  cannot_tell: "cannot tell from the data",
+  inconsistent: "inconsistent: created after the window, stamped before it",
 }
 
 function route(from, to) {
@@ -576,12 +627,18 @@ const SECTIONS = [
     }),
   },
 
+  // Sections 8 and 8b split one population, delivered with remit_paid_at null,
+  // on whether a commission is recorded. Their where clauses differ in that
+  // one term and nothing else, so every such row lands in exactly one of them.
+  // Only 8 carries a total, and it is summed from remit_cedis: what the courier
+  // owes Gyema, not the quote the courier collected.
   {
     id: 8,
-    title: "REMIT OUTSTANDING",
-    subtitle: "status delivered with remit_paid_at null. The total below is summed from the quote_cedis values printed above it and from nothing else.",
+    title: "REMIT OUTSTANDING, commission recorded",
+    subtitle:
+      "status delivered, remit_paid_at null, remit_cedis set. The total below is summed from the remit_cedis values printed above it and from nothing else. quote_cedis is shown for context and is not the amount owed. A delivered row with no remit_cedis is in section 8b, never here.",
     table: "public.guest_jobs_dispatch",
-    where: "status = 'delivered' and remit_paid_at is null",
+    where: "status = 'delivered' and remit_paid_at is null and remit_cedis is not null",
     order: "updated_at asc",
     columns: [
       "tracking_id",
@@ -594,6 +651,7 @@ const SECTIONS = [
       "dropoff_area",
       "payment_type",
       "quote_cedis",
+      "remit_cedis",
     ],
     render: (r) => ({
       flags: [],
@@ -607,6 +665,7 @@ const SECTIONS = [
         ["route", route(r.pickup_area, r.dropoff_area)],
         ["payment_type", show(r.payment_type)],
         ["quote_cedis", toAmount(r.quote_cedis).text],
+        ["remit_cedis", toAmount(r.remit_cedis).text],
       ],
     }),
     // Summed in the client, from the same rows printed above, so the figure is
@@ -616,7 +675,7 @@ const SECTIONS = [
       let counted = 0
       let skipped = 0
       for (const r of rows) {
-        const amount = toAmount(r.quote_cedis)
+        const amount = toAmount(r.remit_cedis)
         if (amount.ok) {
           total += amount.value
           counted += 1
@@ -624,11 +683,82 @@ const SECTIONS = [
           skipped += 1
         }
       }
-      const lines = [`  quote_cedis total over ${counted} of ${rows.length} rows: ${total.toFixed(2)}`]
+      const lines = [`  remit_cedis total over ${counted} of ${rows.length} rows: ${total.toFixed(2)}`]
       if (skipped > 0) {
-        lines.push(`  ${skipped} row(s) carried no usable quote_cedis and are excluded from that total`)
+        lines.push(`  ${skipped} row(s) carried no usable remit_cedis and are excluded from that total`)
       }
       return lines
+    },
+  },
+
+  {
+    id: "8b",
+    title: "DELIVERED, NO COMMISSION RECORDED",
+    subtitle: `status delivered, remit_paid_at null, remit_cedis null. Listed and never totalled: these rows record no commission, and a quote is not a commission. Each row is placed against the window in which the commission shipped, as a fact and not a verdict. A pickup or delivery stamp before ${COMMISSION_SHIPPED_EARLIEST} means the job is older than the commission. A created_at after ${COMMISSION_SHIPPED_LATEST} means it was claimed after the commission shipped on both networks, where accept always writes remit_cedis, so a missing one is a data gap. Anything else cannot be told from the data. If a row here is owed, remit_cedis is set by hand and the row moves to section 8.`,
+    table: "public.guest_jobs_dispatch",
+    where: "status = 'delivered' and remit_paid_at is null and remit_cedis is null",
+    order: "updated_at asc",
+    columns: [
+      "tracking_id",
+      tstamp("updated_at"),
+      ageOf("updated_at"),
+      tstamp("created_at"),
+      tstamp("pickup_confirmed_at"),
+      tstamp("delivery_confirmed_at"),
+      "delivery_confirmed_by",
+      "assigned_courier",
+      "pickup_area",
+      "dropoff_area",
+      "quote_cedis",
+      // Computed by Postgres against timestamptz literals, so the comparison
+      // is exact to the second and independent of the laptop clock. No
+      // parentheses: the read only guard refuses any parenthesised group after
+      // a boolean operator, and neither expression needs one. A null stamp
+      // compares to null, which is read below as "no evidence", never as false.
+      `created_at >= '${COMMISSION_SHIPPED_LATEST}'::timestamptz as created_after_window`,
+      `pickup_confirmed_at < '${COMMISSION_SHIPPED_EARLIEST}'::timestamptz or delivery_confirmed_at < '${COMMISSION_SHIPPED_EARLIEST}'::timestamptz as stamped_before_window`,
+    ],
+    render: (r) => {
+      const era = commissionEra(r)
+      const flags = []
+      if (era === "inconsistent") {
+        flags.push(
+          `INCONSISTENT: created_at is after ${COMMISSION_SHIPPED_LATEST} but a stamp is before ${COMMISSION_SHIPPED_EARLIEST}. A stamp cannot predate its own row, so a timestamp here is wrong.`
+        )
+      } else if (era === "data_gap") {
+        flags.push(
+          `DATA GAP: created after ${COMMISSION_SHIPPED_LATEST}, so claimed after the commission shipped on both networks, and accept writes remit_cedis in the claim itself. This row reached delivered without that write.`
+        )
+      }
+      return {
+        flags,
+        age: r.updated_at_age_secs,
+        ageLabel: "since updated_at",
+        fields: [
+          ["commission era", COMMISSION_ERA_LABELS[era]],
+          ["created_at", show(r.created_at_txt)],
+          ["pickup_confirmed_at", show(r.pickup_confirmed_at_txt)],
+          ["delivery_confirmed_at", show(r.delivery_confirmed_at_txt)],
+          ["delivery_confirmed_by", show(r.delivery_confirmed_by)],
+          ["updated_at", show(r.updated_at_txt)],
+          ["assigned_courier", show(r.assigned_courier)],
+          ["route", route(r.pickup_area, r.dropoff_area)],
+          ["quote_cedis", toAmount(r.quote_cedis).text],
+        ],
+      }
+    },
+    // Counts only. There is deliberately no cedi total in this footer.
+    footer: (rows) => {
+      const counts = { pre_change: 0, data_gap: 0, cannot_tell: 0, inconsistent: 0 }
+      for (const r of rows) counts[commissionEra(r)] += 1
+      return [
+        "  buckets, counted from the rows above:",
+        `    older than the commission, a stamp before ${COMMISSION_SHIPPED_EARLIEST}: ${counts.pre_change} row(s)`,
+        `    data gap, created after ${COMMISSION_SHIPPED_LATEST}: ${counts.data_gap} row(s)`,
+        `    cannot tell from the data: ${counts.cannot_tell} row(s)`,
+        `    inconsistent timestamps: ${counts.inconsistent} row(s)`,
+        "  No cedi total is printed for this section, by design.",
+      ]
     },
   },
 
@@ -850,7 +980,7 @@ const CHECKS = [
     id: "0.4",
     title: "REMIT PAID ON A JOB THAT IS NOT DELIVERED",
     subtitle:
-      "remit_paid_at is set on a row whose status is not delivered. The total below is summed from the quote_cedis values printed above it and from nothing else. is distinct from, not <>, because status <> 'delivered' evaluates to null for a null status and would drop the row instead of reporting it.",
+      "remit_paid_at is set on a row whose status is not delivered. The total below is summed from the remit_cedis values printed above it and from nothing else; a row with no remit_cedis is counted separately and adds nothing. is distinct from, not <>, because status <> 'delivered' evaluates to null for a null status and would drop the row instead of reporting it.",
     table: "public.guest_jobs_dispatch",
     where: "remit_paid_at is not null and status is distinct from 'delivered'",
     order: "remit_paid_at asc",
@@ -866,6 +996,7 @@ const CHECKS = [
       "pickup_area",
       "dropoff_area",
       "quote_cedis",
+      "remit_cedis",
     ],
     render: (r) => ({
       flags: [`remit_paid_at is set on a job whose status is ${show(r.status)}, not delivered`],
@@ -880,6 +1011,7 @@ const CHECKS = [
         ["assigned_courier", show(r.assigned_courier)],
         ["route", route(r.pickup_area, r.dropoff_area)],
         ["quote_cedis", toAmount(r.quote_cedis).text],
+        ["remit_cedis", toAmount(r.remit_cedis).text],
       ],
     }),
     footer: (rows) => {
@@ -887,7 +1019,7 @@ const CHECKS = [
       let counted = 0
       let skipped = 0
       for (const r of rows) {
-        const amount = toAmount(r.quote_cedis)
+        const amount = toAmount(r.remit_cedis)
         if (amount.ok) {
           total += amount.value
           counted += 1
@@ -896,14 +1028,49 @@ const CHECKS = [
         }
       }
       const lines = [
-        `  quote_cedis total over ${counted} of ${rows.length} rows: ${total.toFixed(2)}`,
-        "  That is money marked paid out against jobs not marked delivered.",
+        `  remit_cedis total over ${counted} of ${rows.length} rows: ${total.toFixed(2)}`,
+        "  That is commission marked paid by couriers against jobs not marked delivered.",
       ]
       if (skipped > 0) {
-        lines.push(`  ${skipped} row(s) carried no usable quote_cedis and are excluded from that total`)
+        lines.push(`  ${skipped} row(s) carried no usable remit_cedis and are excluded from that total`)
       }
       return lines
     },
+  },
+
+  {
+    id: "0.5",
+    title: "COMMISSION MISSING ON A JOB CLAIMED AFTER IT SHIPPED",
+    subtitle: `assigned_courier set, remit_cedis null, created_at on or after ${COMMISSION_SHIPPED_LATEST}, any status. A job created after that moment can only have been claimed after the commission shipped on both networks, and /api/guest/accept writes remit_cedis in the same UPDATE that assigns the courier. A row here was assigned some other way. This check sees it at claim time, before it can reach section 8b as a data gap.`,
+    table: "public.guest_jobs_dispatch",
+    where: `assigned_courier is not null and remit_cedis is null and created_at >= '${COMMISSION_SHIPPED_LATEST}'::timestamptz`,
+    order: "created_at asc",
+    columns: [
+      "tracking_id",
+      "status",
+      tstamp("created_at"),
+      ageOf("created_at"),
+      tstamp("updated_at"),
+      "assigned_courier",
+      "pickup_area",
+      "dropoff_area",
+      "quote_cedis",
+      tstamp("remit_paid_at"),
+    ],
+    render: (r) => ({
+      flags: [`assigned to ${show(r.assigned_courier)} with no remit_cedis, on a job created after the commission shipped`],
+      age: r.created_at_age_secs,
+      ageLabel: "since created_at",
+      fields: [
+        ["status", show(r.status)],
+        ["created_at", show(r.created_at_txt)],
+        ["updated_at", show(r.updated_at_txt)],
+        ["assigned_courier", show(r.assigned_courier)],
+        ["route", route(r.pickup_area, r.dropoff_area)],
+        ["quote_cedis", toAmount(r.quote_cedis).text],
+        ["remit_paid_at", show(r.remit_paid_at_txt)],
+      ],
+    }),
   },
 ]
 
@@ -1177,7 +1344,7 @@ async function runIntegrity(client) {
 // one first passed through assertReadOnlySql, then exits. It opens no
 // connection and needs no credentials.
 //
-// Two uses. It proves the read only guard accepts exactly these fourteen
+// Two uses. It proves the read only guard accepts exactly these sixteen
 // statements and nothing else, and it hands over the statements themselves so
 // they can be pasted into the Supabase SQL editor and the printed report
 // checked against the database row by row.
@@ -1534,4 +1701,7 @@ export {
   CHECKS,
   REQUIRED_COLUMNS,
   DECLARED_GUEST_STATUSES,
+  COMMISSION_SHIPPED_EARLIEST,
+  COMMISSION_SHIPPED_LATEST,
+  commissionEra,
 }

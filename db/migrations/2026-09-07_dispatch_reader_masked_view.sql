@@ -58,6 +58,12 @@
 -- catalog check after this file was applied to Testnet, and revoked there by
 -- hand at the time.
 --
+-- EXTENDED 15 September by db/migrations/2026-09-15_dispatch_view_remit_cedis.sql,
+-- which adds remit_cedis to guest_jobs_dispatch as column 23. Section 5 below
+-- still creates the 22 column view. Rerunning this file after that one drops
+-- remit_cedis again, and scripts/dispatch-reader.mjs then fails its preflight
+-- naming it. If this file is ever rerun, rerun that one after it.
+--
 -- WHAT DEPENDS ON IT
 --
 -- scripts/dispatch-reader.mjs, which after the matching commit selects from
@@ -209,15 +215,17 @@ comment on function public.mask_phone_head_only(text) is
 -- 5. The two views
 --
 -- drop then create rather than create or replace, because create or replace
--- refuses any change to the column list and this file has to be safe to run
--- over an earlier version of itself.
+-- refuses to drop, rename, reorder or retype an existing column (it permits
+-- only adding columns at the end) and this file has to be safe to run over an
+-- earlier version of itself.
 --
 -- security_invoker is left at its default of OFF (section 6 asserts it
 -- explicitly where the server supports it). The views therefore read their
 -- base tables with the OWNER's rights, which is what lets section 7 take away
 -- every base table grant gyema_reader holds. The role reads the views and has
 -- no path to the tables underneath them at all: not to sender_phone, not to
--- delivery_code_hash, not to the remit_* settlement columns.
+-- delivery_code_hash, not to any remit_* settlement column the view does not
+-- itself select. It selects remit_paid_at.
 --
 -- ROW CAP. Each view carries its own LIMIT. This is the row cap on the role:
 -- it is enforced by the view, not by the script, so no edit to the script and
@@ -443,7 +451,18 @@ grant select on public.listings_dispatch   to gyema_reader;
 --        and c.relname in ('guest_jobs_dispatch', 'listings_dispatch')
 --      order by c.relname, grantee;
 --
---     Expect gyema_reader with SELECT, plus the owner. Nothing else.
+--     Expect, per view: gyema_reader with SELECT only, and postgres (the owner)
+--     and service_role each with the full owner set, which from Postgres 17 is
+--     DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE.
+--     Nothing for anon, authenticated or PUBLIC.
+--
+--     CORRECTED 15 September. This line used to read "gyema_reader with SELECT,
+--     plus the owner. Nothing else", which made a correct state read as a
+--     finding. service_role holds the views because the grant baseline revokes
+--     Supabase's default privileges from anon and authenticated only, and these
+--     views are created after it. Confirmed for guest_jobs_dispatch on Testnet
+--     on 15 September. listings_dispatch is created the same way and is
+--     expected to match; it was not read that day.
 --
 -- (g) The old policies are gone. Expect zero rows.
 --

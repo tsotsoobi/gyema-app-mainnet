@@ -517,8 +517,14 @@ select jsonb_pretty(jsonb_build_object(
       || 'gyema_reader_select is expected absent once 2026-09-07 is applied. Policies on the three '
       || 'unreferenced tables: unknown, read them.',
     'check_03_table_grants',
-      'Read the two dispatch views here as well: guest_jobs_dispatch and listings_dispatch must show '
-      || 'gyema_reader and nothing else. They are created after the grant baseline runs, so on 7 September '
+      'Read the two dispatch views here as well. Each must show exactly two grantees from this list: '
+      || 'gyema_reader with SELECT only, and service_role with the full set (DELETE, INSERT, MAINTAIN from '
+      || 'Postgres 17, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE). service_role is correct there, not a '
+      || 'finding: the grant baseline revokes the Supabase default privileges from anon and authenticated only, '
+      || 'and the views are created after it. Corrected 15 September, when this line still said gyema_reader '
+      || 'and nothing else; confirmed for guest_jobs_dispatch on Testnet that day. The owner, postgres, is '
+      || 'outside this check filter and does not appear. Any row for anon, authenticated or PUBLIC on either '
+      || 'view is a finding: they are created after the grant baseline runs, so on 7 September '
       || 'they were found on Testnet holding Supabase default grants for anon and authenticated. '
       || 'listings to anon with SELECT. authenticated with SELECT, INSERT, DELETE but NOT UPDATE, because the '
       || '2026-08-14 migration dropped the table wide UPDATE and re-granted per column. guest_jobs expected to '
