@@ -105,3 +105,63 @@ export function quoteCedisRangeForCities(
   if (!Number.isFinite(min)) return null
   return { min, max }
 }
+
+/**
+ * The advisory benchmark a Pioneer form shows for a corridor.
+ *
+ * Exact cell first, because TRIP_AREAS is GUEST_AREA_NAMES plus "Other" and
+ * most corridors resolve to a single zone pair. The city range is the fallback
+ * for the coarse vocabulary. Both Pioneer forms and the mistyped-unit check
+ * read this one function, so the number shown and the number warned about
+ * cannot drift apart.
+ */
+export function pioneerBenchmarkCedis(
+  fromCity: string,
+  toCity: string,
+): { min: number; max: number } | null {
+  const exact = quoteCedis(fromCity, toCity)
+  if (exact !== null) return { min: exact, max: exact }
+  return quoteCedisRangeForCities(fromCity, toCity)
+}
+
+/**
+ * Does a typed Pi amount look like the cedi benchmark copied across?
+ *
+ * The Pioneer forms print a GHS dispatch rate in the same card as a Pi input.
+ * A Pioneer who reads "Typical dispatch rate on this corridor: 50 GHS" and
+ * types 50 has offered 50 Pi for a delivery worth about 50 cedis, and nothing
+ * else in the app notices: the offer is never charged, so there is no payment
+ * to refuse, and `piAmount` accepts it because 50 is a number somebody could
+ * have meant.
+ *
+ * This cannot be decided by arithmetic. There is no Pi to GHS rate anywhere in
+ * this codebase and there must not be one, because no rate exists that the app
+ * could cite. What it does instead is notice that the typed amount has reached
+ * the floor of the only cedi figure on the screen.
+ *
+ * The threshold is the benchmark minimum rather than an exact match, and the
+ * separation is what makes that safe rather than noisy: the ZONE_MATRIX floor
+ * is 25 GHS and the form placeholders suggest 5 and 10 Pi, so a Pioneer naming
+ * a real Pi price sits well under any corridor's minimum. A near miss, reading
+ * a 40 to 70 range and typing 50, is the same mistake and is caught too.
+ *
+ * Advisory only. This returns a number for the caller to warn with and never
+ * blocks a submission: a Pioneer who genuinely means a large Pi offer is
+ * entitled to make one.
+ *
+ * Returns the benchmark figure to quote back, or null when there is nothing to
+ * say: no corridor benchmark, an unparseable or non-positive amount, or an
+ * amount below the floor.
+ */
+export function benchmarkMistypedAsPi(
+  typedPi: string,
+  fromCity: string,
+  toCity: string,
+): { min: number; max: number } | null {
+  const amount = Number.parseFloat(typedPi)
+  if (!Number.isFinite(amount) || amount <= 0) return null
+  const benchmark = pioneerBenchmarkCedis(fromCity, toCity)
+  if (!benchmark) return null
+  if (amount < benchmark.min) return null
+  return benchmark
+}

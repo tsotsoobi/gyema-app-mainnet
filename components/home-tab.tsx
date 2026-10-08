@@ -29,7 +29,11 @@ import { ListingDetailSheet } from "./listing-detail-sheet"
 import { GuestPostGate } from "./guest-post-gate"
 import { GuestJobCard, GuestJobSheet } from "./guest-job-sheet"
 import { getOpenGuestJobsAsync, type OpenGuestJob } from "@/lib/guest-jobs"
-import { GUEST_AREA_NAMES, quoteCedis, quoteCedisRangeForCities } from "@/lib/guest-pricing"
+import {
+  GUEST_AREA_NAMES,
+  benchmarkMistypedAsPi,
+  pioneerBenchmarkCedis,
+} from "@/lib/guest-pricing"
 
 // Bounded AREA list for normalized origin/destination matching (v1:
 // Greater Accra areas, mirroring the guest /send vocabulary so both rails
@@ -38,6 +42,59 @@ import { GUEST_AREA_NAMES, quoteCedis, quoteCedisRangeForCities } from "@/lib/gu
 // hatch, same as guest off-list. Source of truth: GUEST_AREAS in
 // lib/guest-pricing.ts.
 const TRIP_AREAS = [...GUEST_AREA_NAMES, "Other"]
+
+/**
+ * The advisory cedi benchmark for a corridor.
+ *
+ * Written once because both Pioneer forms render it and both used to carry
+ * byte-identical copies, which is how one defect shipped in two places. It no
+ * longer sits directly above the Pi input: the money field is the last thing
+ * in each form before WhatsApp, and this sits above the date field instead, so
+ * a cedi figure and a Pi box are never adjacent.
+ */
+function CorridorBenchmark({ fromCity, toCity }: { fromCity: string; toCity: string }) {
+  const r = pioneerBenchmarkCedis(fromCity, toCity)
+  if (!r) return null
+  return (
+    <p className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-muted-foreground">
+      Typical dispatch rate on this corridor: {r.min === r.max ? r.min : `${r.min} to ${r.max}`} GHS.
+      Benchmark only, you set your Pi price.
+    </p>
+  )
+}
+
+/**
+ * The warning that catches the benchmark being typed into the Pi field.
+ *
+ * Advisory and never blocking: it does not touch `valid` and the submit button
+ * stays enabled, because a Pioneer who means a large Pi offer is entitled to
+ * make one. It quotes no conversion, because no Pi to GHS rate exists that
+ * this app could cite. See benchmarkMistypedAsPi for why the threshold is the
+ * benchmark floor rather than an exact match.
+ */
+function PiUnitWarning({
+  typedPi,
+  fromCity,
+  toCity,
+}: {
+  typedPi: string
+  fromCity: string
+  toCity: string
+}) {
+  const b = benchmarkMistypedAsPi(typedPi, fromCity, toCity)
+  if (!b) return null
+  const amount = Number.parseFloat(typedPi)
+  return (
+    <p
+      role="alert"
+      className="rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 leading-relaxed"
+    >
+      You typed {amount}, and that means <strong>{amount} π Pi</strong>. The{" "}
+      {b.min === b.max ? b.min : `${b.min} to ${b.max}`} GHS dispatch rate above is a price in
+      cedis, not a Pi amount. Change this if you meant cedis.
+    </p>
+  )
+}
 
 interface HomeTabProps {
   role: UserRole
@@ -326,6 +383,8 @@ function TravellerHome({
                 so we can price it and open it for everyone.
               </div>
             )}
+            <CorridorBenchmark fromCity={fromCity} toCity={toCity} />
+
             <div className="space-y-1.5">
               <Label htmlFor="t-date">Travel Date</Label>
               <Input
@@ -351,17 +410,6 @@ function TravellerHome({
               </Select>
             </div>
 
-            {(() => {
-              const exact = quoteCedis(fromCity, toCity)
-              const r = exact !== null ? { min: exact, max: exact } : quoteCedisRangeForCities(fromCity, toCity)
-              if (!r) return null
-              return (
-                <p className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-muted-foreground">
-                  Typical dispatch rate on this corridor: {r.min === r.max ? r.min : `${r.min} to ${r.max}`} GHS.
-                  Benchmark only, you set your Pi price.
-                </p>
-              )
-            })()}
             <div className="space-y-1.5">
               <Label htmlFor="t-price">Your Price (π Pi)</Label>
               <Input
@@ -374,6 +422,7 @@ function TravellerHome({
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
               />
+              <PiUnitWarning typedPi={price} fromCity={fromCity} toCity={toCity} />
             </div>
 
             <div className="space-y-1.5">
@@ -704,6 +753,8 @@ function SenderHome({
                 so we can price it and open it for everyone.
               </div>
             )}
+            <CorridorBenchmark fromCity={fromCity} toCity={toCity} />
+
             <div className="space-y-1.5">
               <Label htmlFor="deadline">Deadline</Label>
               <Input
@@ -714,17 +765,6 @@ function SenderHome({
               />
             </div>
 
-            {(() => {
-              const exact = quoteCedis(fromCity, toCity)
-              const r = exact !== null ? { min: exact, max: exact } : quoteCedisRangeForCities(fromCity, toCity)
-              if (!r) return null
-              return (
-                <p className="rounded-[14px] bg-secondary/10 border border-secondary/30 p-3 text-sm text-muted-foreground">
-                  Typical dispatch rate on this corridor: {r.min === r.max ? r.min : `${r.min} to ${r.max}`} GHS.
-                  Benchmark only, you set your Pi price.
-                </p>
-              )
-            })()}
             <div className="space-y-1.5">
               <Label htmlFor="offer">Your Offer (π Pi)</Label>
               <Input
@@ -737,6 +777,7 @@ function SenderHome({
                 value={offer}
                 onChange={(e) => setOffer(e.target.value)}
               />
+              <PiUnitWarning typedPi={offer} fromCity={fromCity} toCity={toCity} />
             </div>
 
             <div className="space-y-1.5">
